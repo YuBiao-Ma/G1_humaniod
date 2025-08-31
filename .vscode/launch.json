@@ -12,7 +12,7 @@
             "console": "integratedTerminal",
             "args": [
                 "--task", "g1_teacher",
-                "--num_envs", "4096",
+                "--num_envs", "1000",
                 "--headless",
                 "--experiment_name","g1_teacher_vq_num_embed_16",
                 // "--resume",

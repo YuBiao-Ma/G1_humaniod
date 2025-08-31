@@ -6053,6 +6053,200 @@ class PureBetaVAE(nn.Module):
 
         return loss
     
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+class PureTeacherVAE(nn.Module):
+    """
+    Posterior = Prior + Residual：
+      prior_encode(obs) -> (mu_p, logvar_p)
+      post_encode(priv, obs) -> (mu_q, logvar_q) 其中
+        μ_q = μ_p + Δμ,  logσ_q^2 = logσ_p^2 + Δlogσ^2
+    forward 返回 z 以及两侧分布参数；
+    loss_fn 计算 KL(q||p) + w_nce * InfoNCE。
+    """
+    def __init__(self,
+                 in_dim=45,
+                 post_indim=187,
+                 latent_dim=16,
+                 encoder_hidden_dims=[128, 64],
+                 res_hidden_dims=[64, 32],
+                 beta: float = 0.1,
+                 # ---- InfoNCE 相关超参 ----
+                 nce_proj_dim: int = 128,
+                 nce_queue_size: int = 32768,
+                 nce_temperature: float = 0.1,
+                 nce_weight: float = 0.5) -> None:
+        super().__init__()
+
+        self.latent_dim = latent_dim
+        self.beta = beta
+
+        # ---- Prior encoder: obs -> (mu_p, logvar_p)
+        enc_layers = [nn.Sequential(nn.Linear(in_dim, encoder_hidden_dims[0]), nn.ELU())]
+        for i in range(len(encoder_hidden_dims) - 1):
+            enc_layers += [nn.Sequential(nn.Linear(encoder_hidden_dims[i], encoder_hidden_dims[i+1]), nn.ELU())]
+        self.encoder = nn.Sequential(*enc_layers)
+        self.fc_mu     = nn.Linear(encoder_hidden_dims[-1], latent_dim)
+        self.fc_logvar = nn.Linear(encoder_hidden_dims[-1], latent_dim)
+
+        # ---- Residual encoder: priv -> (Δμ, Δlogσ^2)
+        res_layers = [nn.Sequential(nn.Linear(post_indim, res_hidden_dims[0]), nn.ELU())]
+        for i in range(len(res_hidden_dims) - 1):
+            res_layers += [nn.Sequential(nn.Linear(res_hidden_dims[i], res_hidden_dims[i+1]), nn.ELU())]
+        self.res_encoder = nn.Sequential(*res_layers)
+        self.res_mu     = nn.Linear(res_hidden_dims[-1], latent_dim)
+        self.res_logvar = nn.Linear(res_hidden_dims[-1], latent_dim)
+
+        # ---- InfoNCE: 投影头 + 队列 ----
+        self.nce_q_proj = nn.Sequential(
+            nn.Linear(latent_dim, nce_proj_dim), nn.ELU(),
+            nn.Linear(nce_proj_dim, nce_proj_dim))
+        self.nce_k_proj = nn.Sequential(
+            nn.Linear(latent_dim, nce_proj_dim), nn.ELU(),
+            nn.Linear(nce_proj_dim, nce_proj_dim))
+
+        self.nce_temperature = nce_temperature
+        self.nce_weight = nce_weight
+
+        # 负样本队列（[N, P]），注册为 buffer
+        queue = torch.randn(nce_queue_size, nce_proj_dim)
+        queue = F.normalize(queue, dim=1)
+        self.register_buffer("nce_queue", queue)
+        self.register_buffer("nce_queue_ptr", torch.zeros(1, dtype=torch.long))
+        self.nce_queue_size = nce_queue_size
+        self.nce_proj_dim = nce_proj_dim
+
+    # ---------- helpers ----------
+    @staticmethod
+    def _reparameterize(mu, logvar, training: bool = True):
+        if training:
+            std = torch.exp(0.5 * logvar)
+            eps = torch.randn_like(std)
+            return mu + eps * std
+        else:
+            return mu
+
+    @staticmethod
+    def _kl_diag_gaussians(mu_q, logvar_q, mu_p, logvar_p):
+        # D_KL( N(μq,σq^2) || N(μp,σp^2) )
+        var_q = torch.exp(logvar_q)
+        var_p = torch.exp(logvar_p)
+        kl = 0.5 * ((logvar_p - logvar_q) + (var_q + (mu_q - mu_p) ** 2) / var_p - 1.0)
+        return kl.sum(dim=-1).mean()
+
+    @torch.no_grad()
+    def _nce_update_memory(self, k_proj_norm):
+        """把当前 batch 的 key 投影放入队列（FIFO）。k_proj_norm: [B, P]"""
+        bsz = k_proj_norm.shape[0]
+        ptr = int(self.nce_queue_ptr.item())
+        end = ptr + bsz
+        if end <= self.nce_queue_size:
+            self.nce_queue[ptr:end, :] = k_proj_norm
+        else:
+            first = self.nce_queue_size - ptr
+            self.nce_queue[ptr:, :] = k_proj_norm[:first, :]
+            self.nce_queue[:end - self.nce_queue_size, :] = k_proj_norm[first:, :]
+        self.nce_queue_ptr[0] = (ptr + bsz) % self.nce_queue_size
+
+    def _info_nce(self, q_feats, k_feats_detached):
+        """
+        q_feats: [B, D_latent] 或其投影的输入
+        k_feats_detached: [B, D_latent]（外部需 detach）
+        返回：InfoNCE 标量 loss
+        """
+        # 投影 + 归一化
+        q = self.nce_q_proj(q_feats)
+        q = F.normalize(q, dim=1)
+
+        with torch.no_grad():
+            k = self.nce_k_proj(k_feats_detached)
+            k = F.normalize(k, dim=1)
+
+        # 正样本相似度：q·k+
+        l_pos = torch.einsum("bd,bd->b", q, k).unsqueeze(-1)  # [B,1]
+
+        # 负样本相似度：q·queue^T
+        queue = self.nce_queue.clone().detach()               # [N,P]
+        l_neg = torch.einsum("bd,nd->bn", q, queue)           # [B,N]
+
+        logits = torch.cat([l_pos, l_neg], dim=1) / self.nce_temperature
+        labels = torch.zeros(logits.size(0), dtype=torch.long, device=logits.device)  # 正样本在 index 0
+        loss = F.cross_entropy(logits, labels)
+
+        # 入队（用与 loss 中相同的 k）
+        self._nce_update_memory(k)
+
+        return loss
+    # ---------------------------------------------
+
+    def prior_encode(self, obs_input):
+        h = self.encoder(obs_input)
+        mu_p = self.fc_mu(h)
+        logvar_p = torch.clamp(self.fc_logvar(h), -5.0, 5.0)
+        return mu_p, logvar_p
+
+    def post_encode(self, priv_input, obs_input):
+        mu_p, logvar_p = self.prior_encode(obs_input)
+        r = self.res_encoder(priv_input)
+        d_mu     = self.res_mu(r)
+        d_logvar = torch.clamp(self.res_logvar(r), -5.0, 5.0)
+        mu_q     = mu_p + d_mu
+        logvar_q = torch.clamp(logvar_p + d_logvar, -9.0, 5.0)
+        return mu_q, logvar_q, mu_p, logvar_p
+
+    def forward(self,
+                obs_input,
+                priv_input=None,
+                sample_from: str = "post",  # 注意：你的字符串与判断分支要统一（"posterior"/"prior"）
+                eval_use_mean: bool = True):
+        if priv_input is not None:
+            mu_q, logvar_q, mu_p, logvar_p = self.post_encode(priv_input, obs_input)
+        else:
+            mu_p, logvar_p = self.prior_encode(obs_input)
+            mu_q, logvar_q = None, None
+
+        if sample_from in ("post", "posterior") and (mu_q is not None):
+            z = self._reparameterize(mu_q, logvar_q, training=self.training)
+            if (not self.training) and eval_use_mean:
+                z = mu_q
+        else:
+            # 与部署一致：prior
+            z = self._reparameterize(mu_p, logvar_p, training=self.training)
+            if (not self.training) and eval_use_mean:
+                z = mu_p
+
+        return z, (mu_p, logvar_p), (mu_q, logvar_q)
+
+    def loss_fn(self,
+                obs_input,
+                priv_input,
+                kl_weight: float = None,
+                nce_weight: float = 1.0):
+        """
+        总损失 = beta*KL(q||p) + nce_weight * InfoNCE( prior(μ_p), posterior(μ_q) )
+        - key (posterior) 停梯度
+        - 若 priv_input 为 None，则只返回 KL（实际上无 posterior，KL 也无法算，这里假定训练期总有 priv）
+        """
+        mu_q, logvar_q, mu_p, logvar_p = self.post_encode(priv_input, obs_input)
+
+        # KL(q||p)
+        kl = self._kl_diag_gaussians(mu_q, logvar_q, mu_p, logvar_p)
+        w_kl = self.beta if kl_weight is None else kl_weight
+        loss = w_kl * kl
+
+        # InfoNCE（prior μ_p 为 query，posterior μ_q 为 key，stop-grad）
+        w_nce = self.nce_weight if nce_weight is None else nce_weight
+        if w_nce > 0:
+            nce = self._info_nce(mu_p, mu_q.detach())
+            loss = loss + w_nce * nce
+        else:
+            nce = torch.tensor(0.0, device=obs_input.device)
+
+        
+        return loss
+    
 class MlpBVAERegressionActor(nn.Module):
     def __init__(self,
                  num_prop,
@@ -10884,6 +11078,142 @@ class MlpVqvaeLongEstLayerNormFallPredictRegressionTeacherVQActor(nn.Module):
 
         loss = mseloss  + contact_loss + gravity_loss + loss_vq
         return loss
+
+class MlpVaeLongEstLayerNormFallPredictRegressionTeacherActor(nn.Module):
+    def __init__(self,
+                 num_prop,
+                 num_hist,
+                 actor_dims,
+                 latent_dim,
+                 num_actions,
+                 activation) -> None:
+        super(MlpVaeLongEstLayerNormFallPredictRegressionTeacherActor,self).__init__()
+        self.num_prop = num_prop
+        self.num_hist = num_hist
+        
+        self.actor = nn.Sequential(nn.Linear(latent_dim + (num_prop-9) + 4 + 4 + 32 + 3,512),
+                                   nn.ELU(),
+                                   nn.Linear(512,256),
+                                   nn.ELU(),
+                                   nn.Linear(256,128),
+                                   nn.LayerNorm(128),
+                                   nn.ELU(),
+                                   nn.Linear(128,num_actions))
+
+        
+
+        self.Vae = PureTeacherVAE(in_dim=num_prop*num_hist,post_indim=187,latent_dim=16)
+        
+        self.long_encoder = StateHistoryEncoder(input_size=num_prop-9,
+                                             tsteps = num_hist-1,
+                                             output_size=16)
+        
+        self.short_encoder = nn.Sequential(nn.Linear((num_prop-9)*5,128),
+                                           nn.ELU(),
+                                           nn.Linear(128,64),
+                                           nn.ELU(),
+                                           nn.Linear(64,16),
+                                           nn.ELU())
+        
+        self.estimator_backbone = nn.Sequential(nn.Linear((num_prop-9)*5,128),
+                                          nn.ELU(),
+                                          nn.Linear(128,64),
+                                          nn.ELU())
+        
+        self.predict_latent_layer = nn.Sequential(nn.Linear(64+16,32),
+                                          nn.ELU(),
+                                          nn.Linear(32,latent_dim))
+        
+        self.predict_vel_layer = nn.Sequential(nn.Linear(64+16,32),
+                                   nn.ELU(),
+                                   nn.Linear(32,3))
+        
+        self.predict_contact_layer = nn.Sequential(nn.Linear(64+16,32),
+                                   nn.ELU(),
+                                   nn.Linear(32,2))
+        
+        self.predict_gravity_vec_layer = nn.Sequential(nn.Linear(64+16,32),
+                                   nn.ELU(),
+                                   nn.Linear(32,3))
+        
+        self.random = 1
+        
+    def set_random(self,random):
+        self.random = random
+
+    def reshape(self,obs_hist_flatten):
+        # N*(T*O) -> (N * T)* O -> N * T * O
+        obs_hist_flatten = obs_hist_flatten#.detach()
+        # obs_hist = self.obs_normalizer(obs_hist_flatten.reshape(-1,self.num_prop)).reshape(-1,self.num_hist,self.num_prop)
+        obs_hist = obs_hist_flatten.reshape(-1,self.num_hist,self.num_prop)# add 3 for baselin
+        return obs_hist
+    
+    def reshape_critic(self,critic_obs_hist_flatten):
+        height = critic_obs_hist_flatten[:,:187]
+        critic_obs_hist = critic_obs_hist_flatten[:,187:].reshape(-1,5,50 + 19 + 6 + 1)# add 3 for baselin
+        return critic_obs_hist,height
+
+    def forward(self,obs_hist_flatten,critic_obs_flatten):
+        obs_hist = self.reshape(obs_hist_flatten)
+        b,_,_ = obs_hist.size()
+
+        critic_hist,height = self.reshape_critic(critic_obs_flatten)
+        post_latent ,_, _ = self.Vae(obs_hist_flatten,height)
+        
+        short_hist_flatten = obs_hist[:,-5:,9:].reshape(b,-1)
+        short_encode = self.short_encoder(short_hist_flatten)
+        long_encode = self.long_encoder(obs_hist[:,1:,9:]) #remove linvel and command
+        
+        with torch.no_grad():
+            encode = torch.cat([self.estimator_backbone(short_hist_flatten),long_encode],dim=-1)
+            # latents = self.predict_latent_layer(encode)
+            predicted_vel = self.predict_vel_layer(encode)
+            predicted_contact = self.predict_contact_layer(encode)
+            predicted_grad_vec = self.predict_gravity_vec_layer(encode)
+
+        # prior_latent = self.Vae(obs_hist_flatten,height)
+            
+        actor_input = torch.cat([short_encode,long_encode,predicted_vel.detach(),predicted_contact.detach(),predicted_grad_vec.detach(),obs_hist[:,-1,9:],obs_hist[:,-1,3:6],post_latent],dim=-1) # remove linvel
+        mean  = self.actor(actor_input)
+    
+        return mean
+    
+    def VaeLoss(self,obs_hist_flatten,critic_obs_flatten):
+        
+        obs_hist = self.reshape(obs_hist_flatten)
+        critic_hist,height = self.reshape_critic(critic_obs_flatten)
+        b,l,_ = obs_hist.size()
+        
+        # VAE update
+        # vae_input = obs_hist[:,:,9:].reshape(b*l,-1)
+        # recon,quantize,z,onehot_encode = self.Vae(vae_input)
+        # loss = self.Vae.loss_fn(vae_input,recon,quantize,z,onehot_encode)
+
+       
+        
+        # regression
+        with torch.no_grad():
+            
+            long_encode = self.long_encoder(obs_hist[:,:-1,9:])
+        
+        encode = torch.cat([self.estimator_backbone(obs_hist[:,-6:-1,9:].reshape(b,-1)),long_encode],dim=-1)
+        
+        predict_vel = self.predict_vel_layer(encode)
+        predict_contact = self.predict_contact_layer(encode)
+        predict_gra_vec = self.predict_gravity_vec_layer(encode)
+        
+       
+        mseloss = F.mse_loss(predict_vel,obs_hist[:,-2,:3].detach())
+        contact_loss = F.mse_loss(predict_contact,critic_hist[:,-2,-2:].detach())
+        gravity_loss = F.mse_loss(predict_gra_vec,critic_hist[:,-1,6:9].detach())
+
+         # VAE update
+        
+        loss_vae = self.Vae.loss_fn(obs_hist_flatten,height)
+
+        loss = mseloss  + contact_loss + gravity_loss + loss_vae
+        return loss
+
 
 class MlpVqvaeLongEstLayerNormFallPredictRegressionActor(nn.Module):
     def __init__(self,
