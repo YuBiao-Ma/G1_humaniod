@@ -1,0 +1,4 @@
+*.pyc
+logs/
+humanoidGym.egg-info/
+__pycache__/
