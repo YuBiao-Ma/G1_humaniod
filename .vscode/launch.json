@@ -11,10 +11,10 @@
             "program": "humanoidGym/script/train.py",
             "console": "integratedTerminal",
             "args": [
-                "--task", "g1_teacher",
-                "--num_envs", "1000",
+                "--task", "miniloong",
+                "--num_envs", "4096",
                 "--headless",
-                "--experiment_name","g1_teacher_vq_num_embed_16",
+                "--experiment_name","miniloong_teacher_no",
                 // "--resume",
             ]
         },
@@ -25,10 +25,12 @@
             "program": "humanoidGym/script/play.py",
             "console": "integratedTerminal",
             "args": [
-                "--task", "g1_teacher",
+                "--task", "miniloong",
                 "--num_envs", "1",
-                // "--load_run=Aug28_18-40-59_long_reward_barlowtwin_baseline",
-                // "--checkpoint=100"
+                "--experiment_name","miniloong_teacher_no",
+                 "--num_envs", "16",
+                //  "--load_run=Aug30_18-53-42_long_reward_barlowtwin_baseline"
+              
             ]
         }
     ]

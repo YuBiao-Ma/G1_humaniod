@@ -8086,68 +8086,111 @@ class PriorEncoder(nn.Module):
 class TeacherVqvaeEMA(nn.Module):
 
     def __init__(self,
-                 in_dim= 187,
-                 latent_dim = 16,
-                 encoder_hidden_dims = [64,32],
-                 decoder_hidden_dims = [32,64],
-                 output_dim = 45,
+                 in_dim=187,
+                 latent_dim=16,
+                 encoder_hidden_dims=[64,32],
+                 decoder_hidden_dims=[32,64],
+                 output_dim=45,
                  num_emb=32) -> None:
-        
         super(TeacherVqvaeEMA, self).__init__()
 
         self.latent_dim = latent_dim
-        
+
         encoder_layers = []
         encoder_layers.append(nn.Sequential(nn.Linear(in_dim, encoder_hidden_dims[0]),
                                             nn.ELU()))
         for l in range(len(encoder_hidden_dims)-1):
             encoder_layers.append(nn.Sequential(nn.Linear(encoder_hidden_dims[l], encoder_hidden_dims[l+1]),
-                                        nn.ELU()))
+                                                nn.ELU()))
         self.encoder = nn.Sequential(*encoder_layers)
 
         self.fc_mu = nn.Linear(encoder_hidden_dims[-1], latent_dim)
 
-        self.prior_encoder = PriorEncoder(in_dim=80,feat_dim=latent_dim,hidden=(64,32))
+        self.prior_encoder = PriorEncoder(in_dim=80, feat_dim=latent_dim, hidden=(64,32))
 
-       
         self.embedding_dim = latent_dim
-        self.quantizer = QuantizerEMA(embedding_dim=self.embedding_dim,num_embeddings=num_emb)
+        self.quantizer = QuantizerEMA(embedding_dim=self.embedding_dim, num_embeddings=num_emb)
 
         self.nce = InfoNCE(feat_dim=latent_dim, proj_dim=128, queue_size=32768, temperature=0.1)
 
-    def get_latent(self,input):
+    def get_latent(self, input):
         z = self.encode(input)
         return z
 
-    def encode(self,input):
-        
+    def encode(self, input):
         latent = self.encoder(input)
         z = self.fc_mu(latent)
-        z = F.normalize(z)
+        z = F.normalize(z, dim=1)
         return z
-  
-    
+
     def forward(self, input):
         z = self.encode(input)
-        quantize,onehot_encode = self.quantizer(z)
-        return quantize,z,onehot_encode
-    
-    def loss_fn(self, obs_hist, quantized, z, onehot_encode, lambda_div: float = 1e-2):
-        q_feats = self.prior_encoder(obs_hist)
-        k_feats = quantized.detach()
+        quantize, onehot_encode = self.quantizer(z)
+        return quantize, z, onehot_encode
+
+    # ---------------- VICReg-style regularizers ----------------
+    @staticmethod
+    def _variance_loss(x: torch.Tensor, eps: float = 1e-4, gamma: float = 1.0):
+        """
+        x: [B, D]，保证每个维度 batch-std 不低于 gamma
+        """
+        if x.shape[0] < 2:
+            # batch 太小无法稳定估计方差，返回 0
+            return torch.zeros((), device=x.device)
+        std = torch.sqrt(x.var(dim=0, unbiased=False) + eps)  # [D]
+        return torch.mean(F.relu(gamma - std))
+
+    @staticmethod
+    def _covariance_loss(x: torch.Tensor):
+        """
+        惩罚协方差的非对角项，避免各维冗余
+        """
+        if x.shape[0] < 2:
+            return torch.zeros((), device=x.device)
+        x = x - x.mean(dim=0)
+        cov = (x.T @ x) / (x.shape[0] - 1)          # [D, D]
+        off_diag = cov - torch.diag(torch.diag(cov)) # 去对角
+        return (off_diag.pow(2).sum()) / x.shape[1]
+    # ----------------------------------------------------------
+
+    def loss_fn(self,
+                obs_hist,                 # prior_encoder 的输入（你外部传入 encode）
+                quantized,                # teacher 量化后的嵌入 e_c
+                z,                        # teacher 连续表征（用于 VICReg 正则）
+                onehot_encode,            # teacher 选码 onehot
+                lambda_div: float = 1e-2, # 旧的熵正则权重（可留可去）
+                w_nce: float = 0.5,       # InfoNCE 权重（前期大，后期退火）
+                w_var: float = 1e-2,      # VICReg variance 权重（防坍塌主力）
+                w_cov: float = 1e-3,      # VICReg covariance 权重（去冗余）
+                vic_gamma: float = 1.0,   # variance 阈值 γ
+                use_continuous_key: bool = True  # NCE 的 key 用连续 z（更稳）
+                ):
+        # 1) InfoNCE：q=prior(obs)，k=teacher(z 或 quantized).detach()
+        q_feats = self.prior_encoder(obs_hist)                  # [B, D]
+        k_feats = (z if use_continuous_key else quantized).detach()
         loss_nce = self.nce(q_feats, k_feats)
         self.nce.update_memory(k_feats)
 
+        # 2) commitment（只回传到 z，不回码本）
         commitment_loss = F.mse_loss(quantized.detach(), z)
+
+        # 3) 码本 EMA
         self.quantizer.update_codebook(z, onehot_encode)
 
-        # 使用熵（最大化），作为正则项加入（取负后相加）
-        usage = onehot_encode.mean(0) + 1e-12
+        # 4)（可选）熵最大化 → 均衡使用（保留你的旧项）
+        usage = onehot_encode.float().mean(0).clamp_min(1e-12)
         entropy = -(usage * usage.log()).sum()
         loss_div = -entropy
 
-        vq_loss = commitment_loss + 0.25 * loss_nce
-        return vq_loss + lambda_div * loss_div
+        # 5) VICReg-S（单分支）：对 teacher 连续表征 z 加多样性正则
+        var_loss = self._variance_loss(z, gamma=vic_gamma)  # 保证每维 std >= γ
+        cov_loss = self._covariance_loss(z)                 # 惩罚非对角协方差
+
+        # 6) 汇总
+        vq_loss = 0.1*commitment_loss + w_nce * loss_nce
+        vicreg_reg = w_var * var_loss + w_cov * cov_loss
+        return vq_loss + lambda_div * loss_div + vicreg_reg
+
 # class MlpSimpleLongShortRegressionActor(nn.Module):
 #     def __init__(self,
 #                  num_prop,
@@ -10944,6 +10987,7 @@ class MlpVqvaeLongEstLayerNormFallPredictRegressionTeacherActor(nn.Module):
         loss = loss + mseloss + latent_loss + contact_loss + gravity_loss
         return loss
 
+
 class MlpVqvaeLongEstLayerNormFallPredictRegressionTeacherVQActor(nn.Module):
     def __init__(self,
                  num_prop,
@@ -10957,6 +11001,143 @@ class MlpVqvaeLongEstLayerNormFallPredictRegressionTeacherVQActor(nn.Module):
         self.num_hist = num_hist
         
         self.actor = nn.Sequential(nn.Linear(latent_dim + (num_prop-9) + 4 + 4 + 32 + 3,512),
+                                   nn.ELU(),
+                                   nn.Linear(512,256),
+                                   nn.ELU(),
+                                   nn.Linear(256,128),
+                                   nn.LayerNorm(128),
+                                   nn.ELU(),
+                                   nn.Linear(128,num_actions))
+       
+        self.TVae = TeacherVqvaeEMA(in_dim=187,output_dim=num_prop-9,num_emb=128)
+        
+        self.Vae = PureVqvaeEMA(in_dim=num_prop-9,output_dim=num_prop-9,num_emb=128)
+        
+        self.long_encoder = StateHistoryEncoder(input_size=num_prop-9,
+                                             tsteps = num_hist-1,
+                                             output_size=16)
+        
+        self.short_encoder = nn.Sequential(nn.Linear((num_prop-9)*5,128),
+                                           nn.ELU(),
+                                           nn.Linear(128,64),
+                                           nn.ELU(),
+                                           nn.Linear(64,16),
+                                           nn.ELU())
+        
+        self.estimator_backbone = nn.Sequential(nn.Linear((num_prop-9)*5,128),
+                                          nn.ELU(),
+                                          nn.Linear(128,64),
+                                          nn.ELU())
+        
+        self.predict_latent_layer = nn.Sequential(nn.Linear(64+16,32),
+                                          nn.ELU(),
+                                          nn.Linear(32,latent_dim))
+        
+        self.predict_vel_layer = nn.Sequential(nn.Linear(64+16,32),
+                                   nn.ELU(),
+                                   nn.Linear(32,3))
+        
+        self.predict_contact_layer = nn.Sequential(nn.Linear(64+16,32),
+                                   nn.ELU(),
+                                   nn.Linear(32,2))
+        
+        self.predict_gravity_vec_layer = nn.Sequential(nn.Linear(64+16,32),
+                                   nn.ELU(),
+                                   nn.Linear(32,3))
+        
+        self.random = 1
+        
+    def set_random(self,random):
+        self.random = random
+
+    def reshape(self,obs_hist_flatten):
+        # N*(T*O) -> (N * T)* O -> N * T * O
+        obs_hist_flatten = obs_hist_flatten#.detach()
+        # obs_hist = self.obs_normalizer(obs_hist_flatten.reshape(-1,self.num_prop)).reshape(-1,self.num_hist,self.num_prop)
+        obs_hist = obs_hist_flatten.reshape(-1,self.num_hist,self.num_prop)# add 3 for baselin
+        return obs_hist
+    
+    def reshape_critic(self,critic_obs_hist_flatten):
+        height = critic_obs_hist_flatten[:,:187]
+        critic_obs_hist = critic_obs_hist_flatten[:,187:].reshape(-1,5,50 + 19 + 6 + 1)# add 3 for baselin
+        return critic_obs_hist,height
+
+    def forward(self,obs_hist_flatten):
+        obs_hist = self.reshape(obs_hist_flatten)
+        b,_,_ = obs_hist.size()
+
+        # critic_hist,height = self.reshape_critic(critic_obs_flatten)
+        # vq_latent,_,one_hot = self.TVae(height)
+        vq_latent = torch.zeros(b,16).to(obs_hist.device)
+        
+        short_hist_flatten = obs_hist[:,-5:,9:].reshape(b,-1)
+        short_encode = self.short_encoder(short_hist_flatten)
+        long_encode = self.long_encoder(obs_hist[:,1:,9:]) #remove linvel and command
+        
+        with torch.no_grad():
+            encode = torch.cat([self.estimator_backbone(short_hist_flatten),long_encode],dim=-1)
+            # latents = self.predict_latent_layer(encode)
+            predicted_vel = self.predict_vel_layer(encode)
+            predicted_contact = self.predict_contact_layer(encode)
+            predicted_grad_vec = self.predict_gravity_vec_layer(encode)
+
+        prior_latent = self.TVae.prior_encoder(encode)
+            
+        actor_input = torch.cat([short_encode,long_encode,predicted_vel.detach(),predicted_contact.detach(),predicted_grad_vec.detach(),obs_hist[:,-1,9:],obs_hist[:,-1,3:6],vq_latent],dim=-1) # remove linvel
+        mean  = self.actor(actor_input)
+    
+        return mean
+    
+    def VaeLoss(self,obs_hist_flatten,critic_obs_flatten):
+        
+        obs_hist = self.reshape(obs_hist_flatten)
+        critic_hist,height = self.reshape_critic(critic_obs_flatten)
+        b,l,_ = obs_hist.size()
+        
+        # VAE update
+        # vae_input = obs_hist[:,:,9:].reshape(b*l,-1)
+        # recon,quantize,z,onehot_encode = self.Vae(vae_input)
+        # loss = self.Vae.loss_fn(vae_input,recon,quantize,z,onehot_encode)
+
+       
+        
+        # regression
+        with torch.no_grad():
+            _,_,future_latent,_ = self.Vae(obs_hist[:,-1,9:])
+            long_encode = self.long_encoder(obs_hist[:,:-1,9:])
+        
+        encode = torch.cat([self.estimator_backbone(obs_hist[:,-6:-1,9:].reshape(b,-1)),long_encode],dim=-1)
+        # predict_latent = self.predict_latent_layer(encode)
+        predict_vel = self.predict_vel_layer(encode)
+        predict_contact = self.predict_contact_layer(encode)
+        predict_gra_vec = self.predict_gravity_vec_layer(encode)
+        
+        # latent_loss = F.mse_loss(predict_latent,future_latent)
+        mseloss = F.mse_loss(predict_vel,obs_hist[:,-2,:3].detach())
+        contact_loss = F.mse_loss(predict_contact,critic_hist[:,-2,-2:].detach())
+        gravity_loss = F.mse_loss(predict_gra_vec,critic_hist[:,-1,6:9].detach())
+
+         # TVAE update
+        vq_latent,z,onehot_encode2 = self.TVae(height)
+        loss_vq = self.TVae.loss_fn(encode,vq_latent,z,onehot_encode2)
+
+        loss = mseloss  + contact_loss + gravity_loss + loss_vq
+        return loss
+
+
+class MlpLongEstLayerNormFallPredictRegressionActor(nn.Module):
+    def __init__(self,
+                 num_prop,
+                 num_hist,
+                 actor_dims,
+                 latent_dim,
+                 num_actions,
+                 activation) -> None:
+        super(MlpLongEstLayerNormFallPredictRegressionActor,self).__init__()
+        self.num_prop = num_prop
+        self.num_hist = num_hist
+        
+        self.actor = nn.Sequential(nn.Linear(latent_dim + (num_prop-9) + 4 + 4 + 32 + 3 -16,512),
                                    nn.ELU(),
                                    nn.Linear(512,256),
                                    nn.ELU(),
@@ -11018,12 +11199,11 @@ class MlpVqvaeLongEstLayerNormFallPredictRegressionTeacherVQActor(nn.Module):
         critic_obs_hist = critic_obs_hist_flatten[:,187:].reshape(-1,5,50 + 19 + 6 + 1)# add 3 for baselin
         return critic_obs_hist,height
 
-    def forward(self,obs_hist_flatten,critic_obs_flatten):
+    def forward(self,obs_hist_flatten):
         obs_hist = self.reshape(obs_hist_flatten)
         b,_,_ = obs_hist.size()
 
-        critic_hist,height = self.reshape_critic(critic_obs_flatten)
-        vq_latent,_,one_hot = self.TVae(height)
+       
         
         short_hist_flatten = obs_hist[:,-5:,9:].reshape(b,-1)
         short_encode = self.short_encoder(short_hist_flatten)
@@ -11036,9 +11216,8 @@ class MlpVqvaeLongEstLayerNormFallPredictRegressionTeacherVQActor(nn.Module):
             predicted_contact = self.predict_contact_layer(encode)
             predicted_grad_vec = self.predict_gravity_vec_layer(encode)
 
-        prior_latent = self.TVae.prior_encoder(encode)
             
-        actor_input = torch.cat([short_encode,long_encode,predicted_vel.detach(),predicted_contact.detach(),predicted_grad_vec.detach(),obs_hist[:,-1,9:],obs_hist[:,-1,3:6],vq_latent],dim=-1) # remove linvel
+        actor_input = torch.cat([short_encode,long_encode,predicted_vel.detach(),predicted_contact.detach(),predicted_grad_vec.detach(),obs_hist[:,-1,9:],obs_hist[:,-1,3:6]],dim=-1) # remove linvel
         mean  = self.actor(actor_input)
     
         return mean
@@ -11058,7 +11237,7 @@ class MlpVqvaeLongEstLayerNormFallPredictRegressionTeacherVQActor(nn.Module):
         
         # regression
         with torch.no_grad():
-            _,_,future_latent,_ = self.Vae(obs_hist[:,-1,9:])
+            # _,_,future_latent,_ = self.Vae(obs_hist[:,-1,9:])
             long_encode = self.long_encoder(obs_hist[:,:-1,9:])
         
         encode = torch.cat([self.estimator_backbone(obs_hist[:,-6:-1,9:].reshape(b,-1)),long_encode],dim=-1)
@@ -11074,9 +11253,9 @@ class MlpVqvaeLongEstLayerNormFallPredictRegressionTeacherVQActor(nn.Module):
 
          # TVAE update
         vq_latent,z,onehot_encode2 = self.TVae(height)
-        loss_vq = self.TVae.loss_fn(encode,vq_latent,z,onehot_encode2)
+        # loss_vq = self.TVae.loss_fn(encode,vq_latent,z,onehot_encode2)
 
-        loss = mseloss  + contact_loss + gravity_loss + loss_vq
+        loss = mseloss  + contact_loss + gravity_loss 
         return loss
 
 class MlpVaeLongEstLayerNormFallPredictRegressionTeacherActor(nn.Module):

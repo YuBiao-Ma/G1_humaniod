@@ -33,7 +33,7 @@ def play(args):
     env_cfg.domain_rand.randomize_inertia = False
 
     env_cfg.env.test = True
-    env_cfg.commands.ranges.lin_vel_x = [0.3,1.0]
+    env_cfg.commands.ranges.lin_vel_x = [0.5,0.5]
     env_cfg.commands.ranges.lin_vel_y = [0,0]
     env_cfg.commands.ranges.heading = [0,0]
 
@@ -54,14 +54,15 @@ def play(args):
 
     for i in range(10*int(env.max_episode_length)):
         if train_cfg.runner.algorithm_class_name == "TeacherPPO":
-            actions = policy(obs.detach(),infos["observations"]["critic"].detach())
+            # actions = policy(obs.detach(),infos["observations"]["critic"].detach())
+            actions = policy(obs.detach())
         else:
             actions = policy(obs.detach())
         obs,rews, dones, infos = env.step(actions.detach())
         
 
 if __name__ == '__main__':
-    EXPORT_POLICY = False
+    EXPORT_POLICY = True
     RECORD_FRAMES = False
     MOVE_CAMERA = False
     args = get_args()

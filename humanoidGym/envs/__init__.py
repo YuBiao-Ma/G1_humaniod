@@ -16,6 +16,9 @@ from .long.long_stand_env import LongStandRobot
 
 from .long.long_uneven_ori_sop_config import LongOriSopUnevenRoughCfg,LongOriSopUnevenRoughCfgPPO
 
+from .miniloong.miniloong_config import MiniloongCfg,MiniloongCfgPPO
+from .miniloong.miniloong_env import MiniloongRobot
+
 from .base.legged_robot import LeggedRobot
 
 from humanoidGym.utils.task_registry import task_registry
@@ -26,3 +29,4 @@ task_registry.register("long_uneven",LongUnevenRobot,LongUnevenRoughCfg(),LongUn
 task_registry.register("long_uneven_ori",LongUnevenRobot,LongOriUnevenRoughCfg(),LongOriUnevenRoughCfgPPO())
 task_registry.register("long_uneven_ori_sop",LongUnevenRobot,LongOriSopUnevenRoughCfg(),LongOriSopUnevenRoughCfgPPO())
 task_registry.register("long_stand",LongStandRobot,LongStandRoughCfg(),LongStandRoughCfgPPO())
+task_registry.register("miniloong",MiniloongRobot,MiniloongCfg(),MiniloongCfgPPO())

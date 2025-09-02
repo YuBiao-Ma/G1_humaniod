@@ -263,7 +263,7 @@ class G1TeacherCfg( LeggedRobotCfg ):
             dof_vel = -1e-5
             dof_acc = -2.5e-7
             
-            stumble = -3.0
+            stumble = -5.0
             foot_normal_reward = 0.05
             feet_height_var = 0.5
             
