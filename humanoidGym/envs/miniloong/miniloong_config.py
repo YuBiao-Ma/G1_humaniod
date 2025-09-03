@@ -71,7 +71,7 @@ class MiniloongCfg( LeggedRobotCfg ):
         kd_range = [0.8,1.2]
         
         add_action_lag = True
-        action_lag_timesteps_range = [0,30]
+        action_lag_timesteps_range = [0,5]
         
         randomize_restitution = False
         restitution_range = [0.0,1.0]
@@ -222,53 +222,54 @@ class MiniloongCfg( LeggedRobotCfg ):
         soft_dof_vel_limit = 0.9
         soft_torque_limit = 0.9
         
-        base_height_target = 0.75
+        base_height_target = 0.72
         only_positive_rewards = True
         
-        target_joint_pos_scale = 0.26#0.26#0.165#0.26#0.165
+        target_joint_pos_scale = 0.26
         # local frame   
-        target_feet_height = -0.68#-1.0    
+        target_feet_height = -0.68
         cycle_time = 0.6
         max_contact_force = 500
         tracking_sigma = 5
         
-        min_dist = 0.1
-        # max_dist = 0.8
-        max_dist = 0.3                
+        min_dist = 0.2
+        max_dist = 0.6                
         
         class scales( LeggedRobotCfg.rewards.scales ):
            
-            joint_pos = 0.5#1.0#2.0#3.0
-            feet_clearance = 0.5#1.0
-            feet_contact_number = 2.0#1.0#1.0
+            joint_pos = 0.5
+            feet_clearance = 0.5
+            feet_contact_number = 2.0
             no_fly = 0.5
-            feet_air_time = 1.5#2.0
+            feet_air_time = 1.5
             
-            foot_slip = -0.4#-0.1
+            foot_slip = -0.4
             feet_distance = 0.2
             knee_distance = 0.2
-            feet_rotation = 0.2
+            # feet_rotation = 0.2
 
-            tracking_lin_vel = 1.4
-            tracking_ang_vel = 1.1
+            tracking_lin_vel = 2.5 #1.4
+            tracking_ang_vel = 1.5 #1.1
             vel_mismatch_exp = 0.5
             low_speed = 0.2
             track_vel_hard = 0.5
             
             # base pos
             default_joint_pos = 1
-            orientation = 1.0#1.0
-            base_height = 0.2#0.05
+            orientation = 1.0
+            # base_height_plus = 1
+            base_height = 0.5
             base_acc = 0.2
+            
             # energy
             action_smoothness = -0.02
-            hip_yaw_action_smoothness = -0.005
-            hip_roll_action_smoothness = -0.005
+            # hip_yaw_action_smoothness = -0.005
+            # hip_roll_action_smoothness = -0.005
             ankle_pitch_action_smoothness = -0.005
             ankle_roll_action_smoothness = -0.005
           
             torques = -0.00001
-            power = -1e-5
+            power = -0.005
             dof_vel = -1e-5
             dof_acc = -2.5e-7
             
@@ -276,10 +277,10 @@ class MiniloongCfg( LeggedRobotCfg ):
             foot_normal_reward = 0.05
             feet_height_var = 0.5
             
-            ankle_energy = 0.2
-            hip_yaw_energy = 0.2
-            knee_energy = 0.1
-            hip_pitch_energy = 0.1
+            # ankle_energy = 0.2
+            # hip_yaw_energy = 0.2
+            # knee_energy = 0.1
+            # hip_pitch_energy = 0.1
             
             default_joint_yaw = 0.5
             default_joint_ankle_roll = 0.5
@@ -290,9 +291,9 @@ class MiniloongCfg( LeggedRobotCfg ):
             dof_vel_limits = -1
             dof_pos_limits = -10.
             dof_torque_limits = -0.1
-            # ankle_pitch_limit = 10
+           
             
-            termination = -1#-10
+            termination = -1 #-10
             collision = -10
             
     class normalization:
@@ -303,7 +304,7 @@ class MiniloongCfg( LeggedRobotCfg ):
             dof_vel = 0.05
             height_measurements = 5.0
         clip_observations = 100.
-        clip_actions = 100.
+        clip_actions = 20.
 
     class noise:
         add_noise = True

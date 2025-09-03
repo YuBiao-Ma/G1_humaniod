@@ -592,7 +592,7 @@ class LeggedRobot(BaseTask):
             target_angle = self.cfg.init_state.target_joint_angles[name]
             self.dof_dict[name] = i      
             self.default_dof_pos[i] = angle
-            self.target_dof_pos[i] = target_angle
+          
             
             found = False
             for dof_name in self.cfg.control.stiffness.keys():
@@ -606,7 +606,7 @@ class LeggedRobot(BaseTask):
                 if self.cfg.control.control_type in ["P", "V"]:
                     print(f"PD gain of joint {name} were not defined, setting them to zero")
         self.default_dof_pos = self.default_dof_pos.unsqueeze(0)
-        self.target_dof_pos = self.target_dof_pos.unsqueeze(0)
+     
         print(self.dof_dict)
         # history of observations
         self.obs_history = deque(maxlen=self.cfg.env.num_obs_lens)

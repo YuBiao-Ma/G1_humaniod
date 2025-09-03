@@ -118,6 +118,7 @@ class MiniloongRobot(LeggedRobot):
             env_handle = self.gym.create_env(self.sim, env_lower, env_upper, int(np.sqrt(self.num_envs)))
             pos = self.env_origins[i].clone()
             pos[:2] += torch_rand_float(-1., 1., (2,1), device=self.device).squeeze(1)
+            pos[2] += self.cfg.init_state.pos[2]  
             start_pose.p = gymapi.Vec3(*pos)
                 
             rigid_shape_props = self._process_rigid_shape_props(rigid_shape_props_asset, i)
@@ -285,18 +286,17 @@ class MiniloongRobot(LeggedRobot):
 
         # step physics and render each frame
         self.render()
-            
-        for _ in range(self.cfg.control.decimation):
-            
-            actions_scaled = self.actions * self.action_scales
- 
-            if self.cfg.domain_rand.add_action_lag:
+        
+        actions_scaled = self.actions * self.action_scales
+        if self.cfg.domain_rand.add_action_lag:
                 self.action_lag_buffer[:,:,1:] = self.action_lag_buffer[:,:,:self.cfg.domain_rand.action_lag_timesteps_range[1]].clone()
                 self.action_lag_buffer[:,:,0] = actions_scaled.clone()
                 lagged_actions_scaled = self.action_lag_buffer[torch.arange(self.num_envs),:,self.action_lag_timestep.long()]
-            else:
-                lagged_actions_scaled = actions_scaled
-                
+        else:
+            lagged_actions_scaled = actions_scaled
+            
+        for _ in range(self.cfg.control.decimation):
+            
             if self.cfg.control.use_filter:
                 self.action_filterd = self.exp_avg_filter(lagged_actions_scaled, self.action_filterd,self.cfg.control.exp_avg_decay) 
                 self.torques = self._compute_torques(self.action_filterd).view(self.torques.shape)
@@ -376,7 +376,52 @@ class MiniloongRobot(LeggedRobot):
 
         # small vel and yaw set to zero for idol
         self.commands[env_ids, :3] *= (torch.norm(self.commands[env_ids, :3], dim=1) > self.cfg.commands.stand_com_threshold).unsqueeze(1)
+
+    def _compute_torques(self, actions):
+        """ Compute torques from actions.
+            Actions can be interpreted as position or velocity targets given to a PD controller, or directly as scaled torques.
+            [NOTE]: torques must have the same dimension as the number of DOFs, even if some DOFs are not actuated.
+
+        Args:
+            actions (torch.Tensor): Actions
+
+        Returns:
+            [torch.Tensor]: Torques sent to the simulation
+        """
+        #pd controller
+        # actions_scaled = actions * self.cfg.control.action_scale
+ 
+        # if self.cfg.domain_rand.add_action_lag:
+        #     self.action_lag_buffer[:,:,1:] = self.action_lag_buffer[:,:,:self.cfg.domain_rand.action_lag_timesteps_range[1]].clone()
+        #     self.action_lag_buffer[:,:,0] = actions_scaled.clone()
+        #     lagged_actions_scaled = self.action_lag_buffer[torch.arange(self.num_envs),:,self.action_lag_timestep.long()]
+        # else:
+        #     lagged_actions_scaled = actions_scaled
+        
+        if self.cfg.domain_rand.randomize_gains:
+            p_gains = self.p_gains*self.randomized_p_gains
+            d_gains = self.d_gains*self.randomized_d_gains
+        else:
+            p_gains = self.p_gains
+            d_gains = self.d_gains
+        self.target_dof_pos = actions + self.default_dof_pos
+        self.target_dof_pos[:,4] = torch.clip(self.target_dof_pos[:,4],-0.8,0.8)
+        self.target_dof_pos[:,5] = torch.clip(self.target_dof_pos[:,5],-0.4,0.4)
+        self.target_dof_pos[:,10] = torch.clip(self.target_dof_pos[:,10],-0.8,0.8)
+        self.target_dof_pos[:,11] = torch.clip(self.target_dof_pos[:,11],-0.4,0.4)
+        torques = p_gains*( self.target_dof_pos - self.dof_pos + self.motor_zero_offsets) - d_gains*self.dof_vel
+        
+        if self.cfg.domain_rand.randomize_coulomb_friction:
+            torques = torques - self.joint_viscous * self.dof_vel - self.joint_coulomb * torch.sign(self.dof_vel)
+
+        if self.cfg.domain_rand.randomize_motor_strength:
+            torques = torques*self.torque_multi
             
+        if self.cfg.domain_rand.randomize_rfi:
+            torques += self.torque_limits*torch_rand_float(self.cfg.domain_rand.rfi_st[0], self.cfg.domain_rand.rfi_st[1],(self.num_envs, self.num_dofs), device=self.device) + self.rfi_ep_offest
+        
+        return torch.clip(torques, -self.torque_limits, self.torque_limits)
+
     def  _get_phase(self):
         cycle_time = self.cfg.rewards.cycle_time
         #phase = self.episode_length_buf * self.dt / cycle_time
@@ -439,14 +484,14 @@ class MiniloongRobot(LeggedRobot):
         scale_2 = 2 * scale_1
         # left swing
         sin_pos_l[sin_pos_l > 0] = 0
-        self.ref_dof_pos[:, 0] = sin_pos_l * scale_1
-        self.ref_dof_pos[:, 3] = -sin_pos_l * scale_2
+        self.ref_dof_pos[:, 0] = -sin_pos_l * scale_1 #pitch
+        self.ref_dof_pos[:, 3] = sin_pos_l * scale_2 #knee
         # self.ref_dof_pos[:, 4] = -sin_pos_l * scale_1
         # print(phase[0], sin_pos_l[0])
         # right
         sin_pos_r[sin_pos_r < 0] = 0
-        self.ref_dof_pos[:, 6] = -sin_pos_r * scale_1
-        self.ref_dof_pos[:, 9] = sin_pos_r * scale_2
+        self.ref_dof_pos[:, 6] = sin_pos_r * scale_1
+        self.ref_dof_pos[:, 9] = -sin_pos_r * scale_2
         # self.ref_dof_pos[:, 10] = sin_pos_r * scale_1
 
         self.ref_dof_pos[torch.abs(sin_pos) < 0.05] = 0.
@@ -699,10 +744,10 @@ class MiniloongRobot(LeggedRobot):
     
     def _reward_default_joint_roll(self):
         joint_diff = self.dof_pos - self.default_dof_pos
-        yaw = joint_diff[:, [2,8]]
-        yaw = torch.norm(yaw, dim=1)
-        yaw = torch.clamp(yaw - 0.1, 0, 50)
-        return torch.exp(-yaw * 100)
+        roll = joint_diff[:, [1,7]]
+        roll = torch.norm(roll, dim=1)
+        roll = torch.clamp(roll - 0.1, 0, 50)
+        return torch.exp(-roll * 100)
 
     def _reward_default_joint_ankle_roll(self):
         joint_diff = self.dof_pos - self.default_dof_pos
@@ -722,7 +767,23 @@ class MiniloongRobot(LeggedRobot):
             self.rigid_state[:, self.feet_indices, 2] * stance_mask, dim=1) / torch.sum(stance_mask, dim=1)
         base_height = self.root_states[:, 2] - (measured_heights - 0.05)
         return torch.exp(-torch.abs(base_height - self.cfg.rewards.base_height_target) * 100)
-
+    
+    def _reward_base_height_plus(self):
+        """
+        Calculates the reward based on the robot's base height. Penalizes deviation from a target base height.
+        The reward is computed based on the height difference between the robot's base and the average height 
+        of its feet when they are in contact with the ground.
+        """
+        
+        ground_height = self._get_heights()
+        # stance_mask = self._get_gait_phase()
+        # measured_heights = torch.sum(
+        #     self.rigid_state[:, self.feet_indices, 2] * stance_mask, dim=1) / torch.sum(stance_mask, dim=1)
+        # base_height2 = self.root_states[:, 2] - (measured_heights - 0.05)
+        base_height = torch.mean(self.root_states[:, 2].unsqueeze(1) - ground_height, dim=1)
+        error = torch.clip(torch.abs(base_height - self.cfg.rewards.base_height_target),0,0.2)
+        return torch.exp(-torch.sqrt(error)*10)-error*5
+    
     def _reward_base_acc(self):
         """
         Computes the reward based on the base's acceleration. Penalizes high accelerations of the robot's base,

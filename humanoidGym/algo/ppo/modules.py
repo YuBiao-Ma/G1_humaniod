@@ -11199,7 +11199,7 @@ class MlpLongEstLayerNormFallPredictRegressionActor(nn.Module):
         critic_obs_hist = critic_obs_hist_flatten[:,187:].reshape(-1,5,50 + 19 + 6 + 1)# add 3 for baselin
         return critic_obs_hist,height
 
-    def forward(self,obs_hist_flatten):
+    def forward(self,obs_hist_flatten,critic_obs_flatten):
         obs_hist = self.reshape(obs_hist_flatten)
         b,_,_ = obs_hist.size()
 

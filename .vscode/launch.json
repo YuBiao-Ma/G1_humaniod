@@ -29,7 +29,7 @@
                 "--num_envs", "1",
                 "--experiment_name","miniloong_teacher_no",
                  "--num_envs", "16",
-                //  "--load_run=Aug30_18-53-42_long_reward_barlowtwin_baseline"
+                //  "--load_run=Sep02_14-50-32_long_reward_barlowtwin_baseline"
               
             ]
         }
