@@ -134,6 +134,6 @@ if __name__ == '__main__':
     EXPORT_POLICY = True
     RECORD_FRAMES = False
     MOVE_CAMERA = False
-    PLOT = True
+    PLOT = False
     args = get_args()
     play(args)

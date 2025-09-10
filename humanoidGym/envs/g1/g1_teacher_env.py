@@ -699,7 +699,7 @@ class G1TeacherRobot(LeggedRobot):
     
     def _reward_default_joint_roll(self):
         joint_diff = self.dof_pos - self.default_dof_pos
-        yaw = joint_diff[:, [2,8]]
+        yaw = joint_diff[:, [1,7]]
         yaw = torch.norm(yaw, dim=1)
         yaw = torch.clamp(yaw - 0.1, 0, 50)
         return torch.exp(-yaw * 100)
@@ -1212,7 +1212,7 @@ class G1TeacherRobot(LeggedRobot):
     
     def _reward_hip_roll_yaw_torque_limits(self):
         hip_roll_yaw_torques = self.torques[:,[1,2,7,8]]
-        hip_roll_yaw_torques_limit = 0.5*self.torque_li0mits[[1,2,7,8]]
+        hip_roll_yaw_torques_limit = 0.5*self.torque_limits[[1,2,7,8]]
         return torch.sum((torch.abs(hip_roll_yaw_torques) - hip_roll_yaw_torques_limit).clip(min=0.), dim=1)
     
     def _reward_feet_height_var(self):
@@ -1225,3 +1225,19 @@ class G1TeacherRobot(LeggedRobot):
         ankle_pitch_index = [4,10]
         picth_limit_pen = torch.sum((self.dof_pos[:,ankle_pitch_index] - 0.2).clip(max=0),dim=-1)
         return picth_limit_pen
+    
+    def _reward_base_height_plus(self):
+        """
+        Calculates the reward based on the robot's base height. Penalizes deviation from a target base height.
+        The reward is computed based on the height difference between the robot's base and the average height 
+        of its feet when they are in contact with the ground.
+        """
+        
+        ground_height = self._get_heights()
+        # stance_mask = self._get_gait_phase()
+        # measured_heights = torch.sum(
+        #     self.rigid_state[:, self.feet_indices, 2] * stance_mask, dim=1) / torch.sum(stance_mask, dim=1)
+        # base_height2 = self.root_states[:, 2] - (measured_heights - 0.05)
+        base_height = torch.mean(self.root_states[:, 2].unsqueeze(1) - ground_height, dim=1)
+        error = torch.clip(torch.abs(base_height - self.cfg.rewards.base_height_target),0,0.2)
+        return torch.exp(-torch.sqrt(error)*10)-error*5

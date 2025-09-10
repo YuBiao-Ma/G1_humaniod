@@ -330,6 +330,9 @@ class G1Robot(LeggedRobot):
         self.phase_length_buf += 1
         self.phase = self._get_phase()
         self.compute_ref_state()
+        self.phase_left = self.phase
+        self.phase_right = (self.phase + self.cfg.rewards.offset) % 1
+        self.leg_phase = torch.cat([self.phase_left.unsqueeze(1), self.phase_right.unsqueeze(1)], dim=-1)
         self.stance_mask = self._get_gait_phase()
         self.contact_mask = self.contact_forces[:, self.feet_indices, 2] > 5.
         return super()._post_physics_step_callback()
@@ -389,17 +392,8 @@ class G1Robot(LeggedRobot):
         return phase
 
     def _get_gait_phase(self):
-        # return float mask 1 is stance, 0 is swing
-        #phase = self._get_phase()
-        sin_pos = torch.sin(2 * torch.pi * self.phase)
-        # Add double support phase
         stance_mask = torch.zeros((self.num_envs, 2), device=self.device)
-        # left foot stance
-        stance_mask[:, 0] = sin_pos > 0
-        # right foot stance
-        stance_mask[:, 1] = sin_pos < 0
-        
-        stance_mask[torch.abs(sin_pos) < 0.05] = 1
+        stance_mask = self.leg_phase<self.stance_ratio.unsqueeze(1)
 
         return stance_mask
 
@@ -831,7 +825,7 @@ class G1Robot(LeggedRobot):
         # self.last_feet_z = feet_z
 
         # Compute swing mask
-        swing_mask = 1 - self._get_gait_phase()
+        swing_mask = (self.leg_phase > self.stance_ratio.unsqueeze(1)*1.1) & (self.leg_phase<0.95)
 
         # feet height should larger than target feet height at the peak
         rew_pos = (self.feet_height > self.cfg.rewards.target_feet_height)
@@ -1225,3 +1219,19 @@ class G1Robot(LeggedRobot):
         ankle_pitch_index = [4,10]
         picth_limit_pen = torch.sum((self.dof_pos[:,ankle_pitch_index] - 0.2).clip(max=0),dim=-1)
         return picth_limit_pen
+    
+    def _reward_base_height_plus(self):
+        """
+        Calculates the reward based on the robot's base height. Penalizes deviation from a target base height.
+        The reward is computed based on the height difference between the robot's base and the average height 
+        of its feet when they are in contact with the ground.
+        """
+        
+        ground_height = self._get_heights()
+        # stance_mask = self._get_gait_phase()
+        # measured_heights = torch.sum(
+        #     self.rigid_state[:, self.feet_indices, 2] * stance_mask, dim=1) / torch.sum(stance_mask, dim=1)
+        # base_height2 = self.root_states[:, 2] - (measured_heights - 0.05)
+        base_height = torch.mean(self.root_states[:, 2].unsqueeze(1) - ground_height, dim=1)
+        error = torch.clip(torch.abs(base_height - self.cfg.rewards.base_height_target),0,0.2)
+        return torch.exp(-torch.sqrt(error)*10)-error*5

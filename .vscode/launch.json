@@ -11,10 +11,10 @@
             "program": "humanoidGym/script/train.py",
             "console": "integratedTerminal",
             "args": [
-                "--task", "miniloong",
+                "--task", "g1_teacher",
                 "--num_envs", "4096",
                 "--headless",
-                "--experiment_name","miniloong_vq_future_latent",
+                "--experiment_name","g1_vq_future_latent",
                 // "--resume",
             ]
         },
@@ -25,9 +25,9 @@
             "program": "humanoidGym/script/play.py",
             "console": "integratedTerminal",
             "args": [
-                "--task", "miniloong",
+                "--task", "g1_teacher",
                 "--num_envs", "1",
-                "--experiment_name","miniloong_softmax",
+                "--experiment_name","g1_vq_future_latent",
                  "--num_envs", "16",
                 //  "--load_run=Sep02_14-50-32_long_reward_barlowtwin_baseline"
               

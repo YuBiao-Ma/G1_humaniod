@@ -217,6 +217,8 @@ class MiniloongCfg( LeggedRobotCfg ):
         # local frame   
         target_feet_height = -0.68
         cycle_time = 0.6
+        stance_ratio = 0.6
+        offset = 0.5 # phase offset between left and right leg
         max_contact_force = 500
         tracking_sigma = 5
         
@@ -279,6 +281,9 @@ class MiniloongCfg( LeggedRobotCfg ):
             dof_vel_limits = -1
             dof_pos_limits = -10.
             dof_torque_limits = -0.1
+
+            # torque_ankle_pitch_swing = -0.01
+            # torque_ankle_pitch_stance = -0.005
            
             
             termination = -10 #-10

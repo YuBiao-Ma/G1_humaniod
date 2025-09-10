@@ -251,6 +251,8 @@ class MiniloongRobot(LeggedRobot):
         self._init_foot()
         self._init_mirror()
         self._init_action_scales()
+        self.stance_ratio = torch.ones(self.num_envs, dtype=torch.float, device=self.device)*self.cfg.rewards.stance_ratio  
+        self.leg_phase = torch.zeros((self.num_envs, 2), dtype=torch.float, device=self.device)
 
     def update_feet_state(self):
         self.gym.refresh_rigid_body_state_tensor(self.sim)
@@ -331,6 +333,11 @@ class MiniloongRobot(LeggedRobot):
         self.phase_length_buf += 1
         self.phase = self._get_phase()
         self.compute_ref_state()
+        
+        self.phase_left = self.phase
+        self.phase_right = (self.phase + self.cfg.rewards.offset) % 1
+        self.leg_phase = torch.cat([self.phase_left.unsqueeze(1), self.phase_right.unsqueeze(1)], dim=-1)
+
         self.stance_mask = self._get_gait_phase()
         self.contact_mask = self.contact_forces[:, self.feet_indices, 2] > 5.
         return super()._post_physics_step_callback()
@@ -435,17 +442,8 @@ class MiniloongRobot(LeggedRobot):
         return phase
 
     def _get_gait_phase(self):
-        # return float mask 1 is stance, 0 is swing
-        #phase = self._get_phase()
-        sin_pos = torch.sin(2 * torch.pi * self.phase)
-        # Add double support phase
         stance_mask = torch.zeros((self.num_envs, 2), device=self.device)
-        # left foot stance
-        stance_mask[:, 0] = sin_pos > 0
-        # right foot stance
-        stance_mask[:, 1] = sin_pos < 0
-        
-        stance_mask[torch.abs(sin_pos) < 0.05] = 1
+        stance_mask = self.leg_phase<self.stance_ratio.unsqueeze(1)
 
         return stance_mask
 
@@ -657,16 +655,6 @@ class MiniloongRobot(LeggedRobot):
         self.feet_air_time *= ~self.contact_filt
         return air_time.sum(dim=1)
 
-    def _reward_feet_contact_number(self):
-        """
-        Calculates a reward based on the number of feet contacts aligning with the gait phase. 
-        Rewards or penalizes depending on whether the foot contact matches the expected gait phase.
-        """
-        contact = self.contact_forces[:, self.feet_indices, 2] > 2.
-        stance_mask = self._get_gait_phase().clone()
-        # stance_mask[torch.norm(self.commands[:, :3], dim=1) <= self.cfg.commands.stand_com_threshold] = 1
-        reward = torch.where(contact == stance_mask, 1, -0.3)
-        return torch.mean(reward, dim=1)
     
     def _reward_no_fly(self):
         contact = self.contact_forces[:, self.feet_indices, 2] > 2.
@@ -893,7 +881,7 @@ class MiniloongRobot(LeggedRobot):
         # self.last_feet_z = feet_z
 
         # Compute swing mask
-        swing_mask = 1 - self._get_gait_phase()
+        swing_mask = (self.leg_phase > self.stance_ratio.unsqueeze(1)*1.1) & (self.leg_phase<0.95)
 
         # feet height should larger than target feet height at the peak
         rew_pos = (self.feet_height > self.cfg.rewards.target_feet_height)
@@ -1287,3 +1275,32 @@ class MiniloongRobot(LeggedRobot):
         ankle_pitch_index = [4,10]
         picth_limit_pen = torch.sum((self.dof_pos[:,ankle_pitch_index] - 0.2).clip(max=0),dim=-1)
         return picth_limit_pen
+    
+
+    def _reward_feet_contact_number(self):
+        """
+        Calculates a reward based on the number of feet contacts aligning with the gait phase. 
+        Rewards or penalizes depending on whether the foot contact matches the expected gait phase.
+        """
+        contact = self.contact_forces[:, self.feet_indices, 2] > 2.
+        stance_mask = self._get_gait_phase().clone()
+        # stance_mask[torch.norm(self.commands[:, :3], dim=1) <= self.cfg.commands.stand_com_threshold] = 1
+        reward = torch.where(contact == stance_mask, 1, -0.3)
+        return torch.mean(reward, dim=1)
+
+    def _reward_torque_ankle_pitch_swing(self):
+         # minimize the torque used in ankle pitch
+        is_swing = (self.leg_phase > self.stance_ratio.unsqueeze(1)*1.1) & (self.leg_phase<0.95)
+        no_contact = torch.norm(self.contact_forces[:, self.feet_indices, :3], dim=2) == 0
+        res = torch.square(self.torques[:,[4,10]])*is_swing * no_contact
+        # print("is_swing,res",is_swing,res)
+        return torch.sum(res,dim=1) 
+
+    def _reward_torque_ankle_pitch_stance(self):
+         # minimize the torque used in ankle pitch
+        is_stance = self._get_gait_phase()
+        in_contact = torch.norm(self.contact_forces[:, self.feet_indices, :3], dim=2) > 5
+        is_positive_torque = self.torques[:,[4,10]] > 0
+        res = torch.clip(torch.square(self.torques[:,[4,10]]) * self.leg_phase * is_stance * in_contact * is_positive_torque,0,20)
+        # print("res",res)
+        return torch.sum(res,dim=1) 

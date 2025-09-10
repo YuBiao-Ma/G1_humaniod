@@ -2,17 +2,20 @@ from humanoidGym.envs.base.legged_robot_config import LeggedRobotCfg, LeggedRobo
 
 class G1TeacherCfg( LeggedRobotCfg ):
     class init_state( LeggedRobotCfg.init_state ):
-        pos = [0.0, 0.0, 0.85] # x,y,z [m]
+        pos = [0.0, 0.0, 0.82] # x,y,z [m]
         default_joint_angles = { # = target angles [rad] when action = 0.0
+           'left_hip_pitch_joint' : -0.1,  
+           'left_hip_roll_joint' : 0, 
            'left_hip_yaw_joint' : 0. ,   
-           'left_hip_roll_joint' : 0,               
-           'left_hip_pitch_joint' : -0.1,         
+                                
            'left_knee_joint' : 0.3,       
            'left_ankle_pitch_joint' : -0.2,     
            'left_ankle_roll_joint' : 0,     
-           'right_hip_yaw_joint' : 0., 
+           
+           
+           'right_hip_pitch_joint' : -0.1,  
            'right_hip_roll_joint' : 0, 
-           'right_hip_pitch_joint' : -0.1,                                       
+           'right_hip_yaw_joint' : 0.,                                      
            'right_knee_joint' : 0.3,                                             
            'right_ankle_pitch_joint': -0.2,                              
            'right_ankle_roll_joint' : 0,       
@@ -218,7 +221,7 @@ class G1TeacherCfg( LeggedRobotCfg ):
         
         target_joint_pos_scale = 0.26#0.26#0.165#0.26#0.165
         # local frame   
-        target_feet_height = -0.72#-1.0    
+        target_feet_height = -0.76#-1.0    
         cycle_time = 0.6
         max_contact_force = 500
         tracking_sigma = 5
@@ -333,8 +336,8 @@ class G1TeacherCfgPPO( LeggedRobotCfgPPO ):
         activation = 'elu' # can be elu, relu, selu, crelu, lrelu, tanh, sigmoid
 
     class algorithm( LeggedRobotCfgPPO.algorithm ):
-        class_name = 'TeacherPPO'
-        entropy_coef = 0.01
+        class_name = 'PPO'
+        entropy_coef = 0.005
         learning_rate = 1e-3
         max_grad_norm = 1
         
@@ -373,9 +376,9 @@ class G1TeacherCfgPPO( LeggedRobotCfgPPO ):
             
     class runner( LeggedRobotCfgPPO.runner ):
         empirical_normalization = True
-        policy_class_name = "ActorCritic_Teacher"
-        algorithm_class_name = 'TeacherPPO'
+        policy_class_name = "ActorCritic"
+        algorithm_class_name = 'PPO'
         max_iterations = 30000
-        run_name = 'long_reward_barlowtwin_baseline'
+        # run_name = 'long_reward_barlowtwin_baseline'
         experiment_name = 'g1_teacher_vq'
         resume = False
