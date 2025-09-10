@@ -52,16 +52,16 @@ class MiniloongCfg( LeggedRobotCfg ):
         friction_range = [0.4, 1.3]
         
         randomize_base_mass = True
-        added_mass_range = [-2., 5.]
+        added_mass_range = [-2., 2.5]
         
         push_robots = True
         push_interval_s = 15
         max_push_vel_xy = 1.
         
         randomize_com = True
-        com_x = [-0.1,0.1]
-        com_y = [-0.1,0.1]
-        com_z = [-0.1,0.1]
+        com_x = [-0.03,0.03]
+        com_y = [-0.03,0.03]
+        com_z = [-0.03,0.03]
         
         randomize_motor_strength = True
         motor_strength = [0.8,1.2]
@@ -71,7 +71,7 @@ class MiniloongCfg( LeggedRobotCfg ):
         kd_range = [0.8,1.2]
         
         add_action_lag = True
-        action_lag_timesteps_range = [0,5]
+        action_lag_timesteps_range = [0,40]
         
         randomize_restitution = False
         restitution_range = [0.0,1.0]
@@ -80,13 +80,13 @@ class MiniloongCfg( LeggedRobotCfg ):
         randomize_inertia_range = [0.9, 1.1]
         # randomize_inertia_range = [0.9, 1.1]
         
-        randomize_init_joint_scale = True
+        randomize_init_joint_scale = False
         init_joint_scale = [0.5,1.5]
         
-        randomize_init_joint_offset = True
+        randomize_init_joint_offset = False
         init_joint_offset = [-0.1,0.1]
         
-        randomize_rfi = True
+        randomize_rfi = False
         rfi_ep = [-0.1,0.1]
         rfi_st = [-0.1,0.1]
          
@@ -138,7 +138,7 @@ class MiniloongCfg( LeggedRobotCfg ):
         rough_slope_range = [0.0, 0.05]
         # stair_width_range = [0.50, 0.40]
         stair_width_range = [0.35, 0.30]
-        stair_height_range = [0.10, 0.20]
+        stair_height_range = [0.13, 0.13]
         # stair_height_range = [0.15, 0.20]
         discrete_height_range = [0.05, 0.10]
         restitution = 0.
@@ -190,40 +190,28 @@ class MiniloongCfg( LeggedRobotCfg ):
         obs_mirror = ["base_lin_vel","commands","phase","stand_cmd","base_ang_vel","projected_gravity","dofs","dofs","dofs"]
     
     class commands:
-        curriculum = True
-        max_curriculum = 2
+        curriculum = False
+        max_curriculum = 1
         num_commands = 4 # default: lin_vel_x, lin_vel_y, ang_vel_yaw, heading (in heading mode ang_vel_yaw is recomputed from heading error)
         resampling_time = 10. # time before command are changed[s]
         heading_command = True # if true: compute ang vel command from heading error
+        sw_switch = False
+        stand_com_threshold = 0.2
         class ranges:
             lin_vel_x = [-0.8, 1.0] # min max [m/s]
             lin_vel_y = [-0.5, 0.5]   # min max [m/s]
             ang_vel_yaw = [-1, 1]    # min max [rad/s]
             heading = [-3.14, 3.14]
   
-    class commands:
-        curriculum = False
-        max_curriculum = 1
-        num_commands = 4 # default: lin_vel_x, lin_vel_y, ang_vel_yaw, heading (in heading mode ang_vel_yaw is recomputed from heading error)
-        resampling_time = 10. # time before command are changed[s]
-        heading_command = True# if true: compute ang vel command from heading error
-        
-        stand_com_threshold = 0.1#0.05 # if (lin_vel_x, lin_vel_y, ang_vel_yaw).norm < this, robot should stand
-        sw_switch = False# use stand_com_threshold or not
-        
-        class ranges:
-            lin_vel_x = [-0.8, 1.0] # min max [m/s]
-            lin_vel_y = [-0.6, 0.6]   # min max [m/s]
-            ang_vel_yaw = [-1, 1]    # min max [rad/s]
-            heading = [-3.14, 3.14]
+   
   
     class rewards( LeggedRobotCfg.rewards ):
         soft_dof_pos_limit = 0.98
         soft_dof_vel_limit = 0.9
         soft_torque_limit = 0.9
         
-        base_height_target = 0.72
-        only_positive_rewards = True
+        base_height_target = 0.76
+        only_positive_rewards = False
         
         target_joint_pos_scale = 0.26
         # local frame   
@@ -232,7 +220,7 @@ class MiniloongCfg( LeggedRobotCfg ):
         max_contact_force = 500
         tracking_sigma = 5
         
-        min_dist = 0.2
+        min_dist = 0.25
         max_dist = 0.6                
         
         class scales( LeggedRobotCfg.rewards.scales ):
@@ -246,7 +234,7 @@ class MiniloongCfg( LeggedRobotCfg ):
             foot_slip = -0.4
             feet_distance = 0.2
             knee_distance = 0.2
-            # feet_rotation = 0.2
+            feet_rotation = 0.2
 
             tracking_lin_vel = 2.5 #1.4
             tracking_ang_vel = 1.5 #1.1
@@ -257,19 +245,19 @@ class MiniloongCfg( LeggedRobotCfg ):
             # base pos
             default_joint_pos = 1
             orientation = 1.0
-            # base_height_plus = 1
-            base_height = 0.5
+            base_height_plus = 1
+            # base_height = 0.5
             base_acc = 0.2
             
             # energy
             action_smoothness = -0.02
-            # hip_yaw_action_smoothness = -0.005
-            # hip_roll_action_smoothness = -0.005
+            hip_yaw_action_smoothness = -0.005
+            hip_roll_action_smoothness = -0.005
             ankle_pitch_action_smoothness = -0.005
             ankle_roll_action_smoothness = -0.005
           
             torques = -0.00001
-            power = -0.005
+            power = -1e-5
             dof_vel = -1e-5
             dof_acc = -2.5e-7
             
@@ -277,13 +265,13 @@ class MiniloongCfg( LeggedRobotCfg ):
             foot_normal_reward = 0.05
             feet_height_var = 0.5
             
-            # ankle_energy = 0.2
-            # hip_yaw_energy = 0.2
-            # knee_energy = 0.1
-            # hip_pitch_energy = 0.1
+            ankle_energy = 0.2
+            hip_yaw_energy = 0.2
+            knee_energy = 0.1
+            hip_pitch_energy = 0.1
             
             default_joint_yaw = 0.5
-            default_joint_ankle_roll = 0.5
+            # default_joint_ankle_roll = 0.5
             
             contact_momentum = -1e-4
             foot_landing_vel = -0.1
@@ -293,7 +281,7 @@ class MiniloongCfg( LeggedRobotCfg ):
             dof_torque_limits = -0.1
            
             
-            termination = -1 #-10
+            termination = -10 #-10
             collision = -10
             
     class normalization:
@@ -343,8 +331,8 @@ class MiniloongCfgPPO( LeggedRobotCfgPPO ):
         activation = 'elu' # can be elu, relu, selu, crelu, lrelu, tanh, sigmoid
 
     class algorithm( LeggedRobotCfgPPO.algorithm ):
-        class_name = 'TeacherPPO'
-        entropy_coef = 0.01
+        class_name = 'PPO' # TeacherPPO
+        entropy_coef = 0.005
         learning_rate = 1e-3
         max_grad_norm = 1
         
@@ -383,9 +371,9 @@ class MiniloongCfgPPO( LeggedRobotCfgPPO ):
             
     class runner( LeggedRobotCfgPPO.runner ):
         empirical_normalization = True
-        policy_class_name = "ActorCritic_Teacher"
-        algorithm_class_name = 'TeacherPPO'
+        policy_class_name = "ActorCritic" # ActorCritic_Teacher
+        algorithm_class_name = 'PPO'    # TeacherPPO
         max_iterations = 30000
-        run_name = 'long_reward_barlowtwin_baseline'
+        # run_name = 'long_reward_barlowtwin_baseline'
         experiment_name = 'miniloong_teacher_vq'
         resume = False

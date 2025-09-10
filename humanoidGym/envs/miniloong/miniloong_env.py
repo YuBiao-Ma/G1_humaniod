@@ -287,15 +287,16 @@ class MiniloongRobot(LeggedRobot):
         # step physics and render each frame
         self.render()
         
-        actions_scaled = self.actions * self.action_scales
-        if self.cfg.domain_rand.add_action_lag:
-                self.action_lag_buffer[:,:,1:] = self.action_lag_buffer[:,:,:self.cfg.domain_rand.action_lag_timesteps_range[1]].clone()
-                self.action_lag_buffer[:,:,0] = actions_scaled.clone()
-                lagged_actions_scaled = self.action_lag_buffer[torch.arange(self.num_envs),:,self.action_lag_timestep.long()]
-        else:
-            lagged_actions_scaled = actions_scaled
+        
             
         for _ in range(self.cfg.control.decimation):
+            actions_scaled = self.actions * self.action_scales
+            if self.cfg.domain_rand.add_action_lag:
+                    self.action_lag_buffer[:,:,1:] = self.action_lag_buffer[:,:,:self.cfg.domain_rand.action_lag_timesteps_range[1]].clone()
+                    self.action_lag_buffer[:,:,0] = actions_scaled.clone()
+                    lagged_actions_scaled = self.action_lag_buffer[torch.arange(self.num_envs),:,self.action_lag_timestep.long()]
+            else:
+                lagged_actions_scaled = actions_scaled
             
             if self.cfg.control.use_filter:
                 self.action_filterd = self.exp_avg_filter(lagged_actions_scaled, self.action_filterd,self.cfg.control.exp_avg_decay) 
@@ -485,13 +486,13 @@ class MiniloongRobot(LeggedRobot):
         # left swing
         sin_pos_l[sin_pos_l > 0] = 0
         self.ref_dof_pos[:, 0] = -sin_pos_l * scale_1 #pitch
-        self.ref_dof_pos[:, 3] = sin_pos_l * scale_2 #knee
+        self.ref_dof_pos[:, 3] = -sin_pos_l * scale_2 #knee
         # self.ref_dof_pos[:, 4] = -sin_pos_l * scale_1
         # print(phase[0], sin_pos_l[0])
         # right
         sin_pos_r[sin_pos_r < 0] = 0
         self.ref_dof_pos[:, 6] = sin_pos_r * scale_1
-        self.ref_dof_pos[:, 9] = -sin_pos_r * scale_2
+        self.ref_dof_pos[:, 9] = sin_pos_r * scale_2
         # self.ref_dof_pos[:, 10] = sin_pos_r * scale_1
 
         self.ref_dof_pos[torch.abs(sin_pos) < 0.05] = 0.

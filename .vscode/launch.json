@@ -14,7 +14,7 @@
                 "--task", "miniloong",
                 "--num_envs", "4096",
                 "--headless",
-                "--experiment_name","miniloong_teacher_no",
+                "--experiment_name","miniloong_vq_future_latent",
                 // "--resume",
             ]
         },
@@ -27,7 +27,7 @@
             "args": [
                 "--task", "miniloong",
                 "--num_envs", "1",
-                "--experiment_name","miniloong_teacher_no",
+                "--experiment_name","miniloong_softmax",
                  "--num_envs", "16",
                 //  "--load_run=Sep02_14-50-32_long_reward_barlowtwin_baseline"
               

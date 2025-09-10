@@ -1,6 +1,6 @@
 from humanoidGym.algo.ppo.normalizer import EmpiricalNormalization
 from humanoidGym.algo.ppo.utils import smooth_decay, smooth_decay_se
-from .modules import MixMlpSlimVaeLongShortRegressionActor,MlpLongEstLayerNormFallPredictRegressionActor,MlpVqvaeLongEstLayerNormFallPredictRegressionTeacherVQActor, MlpVqvaeLongEstLayerNormFallPredictRegressionTeacherActor ,MixMlpVaeLongShortRegressionActor, MixMlpVaeRegressionActor, MixSlimMlpVQVAERegressionActor, MixmlpVQVAERegressionActor, MixmlpVqvaeLongShortRegressionActor, MlpBVAEDeltaLatentHistRegressionActor, MlpBVAEDeltaRegressionActor, MlpBVAENoPhaseRegressionActor, MlpBVAERegressionActor, MlpBVAETcnContactNoPhaseRegressionActor, MlpBVAETcnContactRegressionActor, MlpBVAETcnRegressionActor, MlpBVAETransRegressionActor, MlpBarlowTwinsLongCnnRegressionActor, MlpBaselineActor, MlpBaselineVQVAEActor, MlpHistoryHeightNoPhaseActor, MlpRnnBVAEActor,MlpSimpleLongShortRegressionActor, MlpSimpleMlpRegressionActor, MlpSimpleRegressionActor, MlpSimpleRnnPhaseShiftRegressionActor, MlpSimpleShortLongRegressionActor, MlpVAERegressionActor, MlpVQVAEActor, MlpVQVAECnnActor, MlpVQVAELongHistActor, MlpVQVAELongShortRegressionActor, MlpVQVAEMixedActor, MlpVQVAERegressionActor, MlpVQVAERnnEncodeActor, MlpVQVAEShortHistActor, MlpVaeLongShortBothGradRegressionActor, MlpVaeLongShortRegressionActor, MlpVaeRegressionActor, MlpVqvaeFallAnglePredictRegressionActor, MlpVqvaeFallAnglePredictScaledCmdRegressionActor, MlpVqvaeLongEstLayerNormCmdScaledRegressionActor, MlpVqvaeLongEstLayerNormFallPredictRegressionActor, MlpVqvaeLongEstLayerNormRegressionActor, MlpVqvaeLongEstRegressionActor, MlpVqvaeLongShortBothGradRegressionActor, MlpVqvaeVelHeightRegressionActor, get_activation,mlp_factory,MlpRnnFullBVAEActor,MlpVQVAERnnActor,MlpRnnBarlowTwinActor,MlpBarlowTwinsRegressionActor,MlpBarlowTwinsRnnRegressionActor,MixedMlpBarlowTwinsRegressionActor,MlpBarlowTwinsCnnRegressionActor, MlpBarlowTwinsCnnRegressionShortHistActor,MlpBarlowTwinsCnnRegressionCurrentActor,MlpBarlowTwinsCnnRegressionShortHistActorNophase,MlpBarlowTwinsCnnRegressionNoPhaseActor,MlpTransRegressionActor, MlpSimSiamActor, MlpBarlowTwinsCnnDeltaRegressionActor,MlpBarlowTwinsCnnSingleActor,MlpBarlowTwinsCnnSingleNoPhaseActor,MlpBarlowTwinsCnnRegressionDirectPastActor,MlpBarlowTwinsCnnRegressionDirectPastNoPhaseActor,MlpSimSiamSingleStepActor,MlpSimSiamSingleStepHeightActor,MlpSimSiamSingleStepNoPhaseActor,MlpBaselineBarlowRegressionActor,MlpBaselineVAEActor,MlpBarlowTwinsNewCnnRegressionNoPhaseActor,MlpBarlowTwinsNewCnnRegressionActor,MlpBaselineTransActor,MlpBaselineTerrianGuideActor,MlpSimpleRnnRegressionActor,MixSlimMlpVaeRegressionActor
+from .modules import MixMlpSlimVaeLongShortRegressionActor,MlpVqvaeSoftmaxLongEstLayerNormFallPredictRegressionTeacherVQSoftmaxActor,MlpVaeLongEstLayerNormFallPredictRegressionTeacherActor,MlpLongEstLayerNormFallPredictRegressionActor,MlpVqvaeLongEstLayerNormFallPredictRegressionTeacherVQActor ,MixMlpVaeLongShortRegressionActor, MixMlpVaeRegressionActor, MixSlimMlpVQVAERegressionActor, MixmlpVQVAERegressionActor, MixmlpVqvaeLongShortRegressionActor, MlpBVAEDeltaLatentHistRegressionActor, MlpBVAEDeltaRegressionActor, MlpBVAERegressionActor, MlpBVAETcnContactNoPhaseRegressionActor, MlpBVAETcnContactRegressionActor, MlpBVAETcnRegressionActor, MlpBVAETransRegressionActor, MlpBarlowTwinsLongCnnRegressionActor, MlpBaselineActor, MlpBaselineVQVAEActor, MlpHistoryHeightNoPhaseActor, MlpRnnBVAEActor,MlpSimpleLongShortRegressionActor, MlpSimpleMlpRegressionActor, MlpSimpleRegressionActor, MlpSimpleRnnPhaseShiftRegressionActor, MlpSimpleShortLongRegressionActor, MlpVAERegressionActor, MlpVQVAEActor, MlpVQVAECnnActor, MlpVQVAELongHistActor, MlpVQVAELongShortRegressionActor, MlpVQVAEMixedActor, MlpVQVAERegressionActor, MlpVQVAERnnEncodeActor, MlpVQVAEShortHistActor, MlpVaeLongShortBothGradRegressionActor, MlpVaeLongShortRegressionActor, MlpVaeRegressionActor, MlpVqvaeFallAnglePredictRegressionActor, MlpVqvaeFallAnglePredictScaledCmdRegressionActor, MlpVqvaeLongEstLayerNormCmdScaledRegressionActor, MlpVqvaeLongEstLayerNormFallPredictRegressionActor, MlpVqvaeLongEstLayerNormRegressionActor, MlpVqvaeLongEstRegressionActor, MlpVqvaeLongShortBothGradRegressionActor, MlpVqvaeVelHeightRegressionActor, get_activation,mlp_factory,MlpRnnFullBVAEActor,MlpVQVAERnnActor,MlpRnnBarlowTwinActor,MlpBarlowTwinsRegressionActor,MlpBarlowTwinsRnnRegressionActor,MixedMlpBarlowTwinsRegressionActor,MlpBarlowTwinsCnnRegressionActor, MlpBarlowTwinsCnnRegressionShortHistActor,MlpBarlowTwinsCnnRegressionCurrentActor,MlpBarlowTwinsCnnRegressionShortHistActorNophase,MlpBarlowTwinsCnnRegressionNoPhaseActor,MlpTransRegressionActor, MlpSimSiamActor, MlpBarlowTwinsCnnDeltaRegressionActor,MlpBarlowTwinsCnnSingleActor,MlpBarlowTwinsCnnSingleNoPhaseActor,MlpBarlowTwinsCnnRegressionDirectPastActor,MlpBarlowTwinsCnnRegressionDirectPastNoPhaseActor,MlpSimSiamSingleStepActor,MlpSimSiamSingleStepHeightActor,MlpSimSiamSingleStepNoPhaseActor,MlpBaselineBarlowRegressionActor,MlpBaselineVAEActor,MlpBarlowTwinsNewCnnRegressionNoPhaseActor,MlpBarlowTwinsNewCnnRegressionActor,MlpBaselineTransActor,MlpBaselineTerrianGuideActor,MlpSimpleRnnRegressionActor,MixSlimMlpVaeRegressionActor
 from torch.distributions import Normal
 import torch.nn as nn
 import torch
@@ -80,7 +80,7 @@ class ActorCritic(nn.Module):
         #                         activation=activation,
         #                         latent_dim=16)
         #MlpVqvaeFallAnglePredictRegressionActor
-        self.actor_teacher_backbone = MlpLongEstLayerNormFallPredictRegressionActor(num_prop=num_prop,#remove linear vel
+        self.actor_teacher_backbone = MlpVqvaeLongEstLayerNormFallPredictRegressionActor(num_prop=num_prop,#remove linear vel
                                 num_hist=num_hist,
                                 num_actions=num_actions,
                                 actor_dims=[512,256,128],
@@ -258,7 +258,7 @@ class ActorCritic_Teacher(nn.Module):
         #                         activation=activation,
         #                         latent_dim=16)
         #MlpVqvaeFallAnglePredictRegressionActor
-        self.actor_teacher_backbone = MlpLongEstLayerNormFallPredictRegressionActor(num_prop=num_prop,#remove linear vel
+        self.actor_teacher_backbone = MlpVqvaeSoftmaxLongEstLayerNormFallPredictRegressionTeacherVQSoftmaxActor(num_prop=num_prop,#remove linear vel
                                 num_hist=num_hist,
                                 num_actions=num_actions,
                                 actor_dims=[512,256,128],
@@ -288,12 +288,10 @@ class ActorCritic_Teacher(nn.Module):
         # disable args validation for speedup
         Normal.set_default_validate_args = False
         
-        #self.optimizer = optim.Adam(self.parameters(), lr=3e-4)
-        # self.optimizer = optim.Adam(self.actor_teacher_backbone.Vae.parameters(), lr=3e-4)
-        # self.device = next(self.actor_teacher_backbone.parameters()).device
+     
         self.optimizer = optim.Adam(self.actor_teacher_backbone.parameters(), lr=1e-3)
-        # self.scaler = torch.amp.GradScaler(self.device)
-        # self.optimizer = optim.AdamW(self.actor_teacher_backbone.parameters(), lr=1e-3)
+        # self.encoder_optimizer = optim.Adam(self.actor_teacher_backbone.TVae.parameters(), lr=1e-5)
+    
     @staticmethod
     # not used at the moment
     def init_weights(sequential, scales):
@@ -342,36 +340,9 @@ class ActorCritic_Teacher(nn.Module):
         return value
     
     def subtask_loss(self,obs_hist,critic_obs_hist):
-        # return self.actor_teacher_backbone.VelLoss(obs_hist)
-        # return self.actor_teacher_backbone.BarlowTwinsLoss(obs_hist)
+        
         return self.actor_teacher_backbone.VaeLoss(obs_hist,critic_obs_hist)
-        # return self.actor_teacher_backbone.SimSiamLoss(obs_hist)
-        #return self.actor_teacher_backbone.NextObsLoss(obs_hist)
-        # return self.actor_teacher_backbone.HeightLatentLoss(obs_hist)
-        # return self.actor_teacher_backbone.RegLoss(obs_hist,critic_obs_hist)
-    
-    # def update(self,obs_hist,critic_obs_hist):
-    #     loss = self.subtask_loss(obs_hist,critic_obs_hist)
-    #     self.optimizer.zero_grad()
-    #     loss.backward()
-    #     nn.utils.clip_grad_norm_(self.parameters(),1)
-    #     self.optimizer.step()
-    #     return loss.detach()
-    
-    # def update(self,obs_hist,critic_obs_hist):
-        
-    #     self.optimizer.zero_grad()
-    #     with torch.autocast(device_type=str(self.device),dtype=torch.float16):
-    #         loss = self.subtask_loss(obs_hist,critic_obs_hist)
-            
-    #     self.scaler.scale(loss).backward()
-    #     self.scaler.unscale_(self.optimizer)
-    #     nn.utils.clip_grad_norm_(self.parameters(),1)
-    #     self.scaler.step(self.optimizer)
-    #     self.scaler.update()
-    #     self.optimizer.zero_grad()
-        
-    #     return loss.detach()
+     
     
     def update(self,obs_hist,critic_obs_hist):
 
