@@ -7,7 +7,7 @@ from isaacgym import gymtorch, gymapi, gymutil
 import torch
 import torch.nn.functional as F
 import os
-from humanoidGym.algo.ppo.utils import build_mirror_ls
+from humanoidGym.learning.utils import build_mirror_ls
 from humanoidGym.utils import exponential_progress
 
 def copysign_new(a, b):

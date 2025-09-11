@@ -286,7 +286,7 @@ class G1TeacherCfg( LeggedRobotCfg ):
             dof_torque_limits = -0.1
             # ankle_pitch_limit = 10
             
-            termination = -1#-10
+            termination = -10#-10
             collision = -10
             
     class normalization:
@@ -336,8 +336,8 @@ class G1TeacherCfgPPO( LeggedRobotCfgPPO ):
         activation = 'elu' # can be elu, relu, selu, crelu, lrelu, tanh, sigmoid
 
     class algorithm( LeggedRobotCfgPPO.algorithm ):
-        class_name = 'PPO'
-        entropy_coef = 0.005
+        class_name = 'PPOTAR'
+        entropy_coef = 0.01
         learning_rate = 1e-3
         max_grad_norm = 1
         
@@ -376,9 +376,9 @@ class G1TeacherCfgPPO( LeggedRobotCfgPPO ):
             
     class runner( LeggedRobotCfgPPO.runner ):
         empirical_normalization = True
-        policy_class_name = "ActorCritic"
-        algorithm_class_name = 'PPO'
+        policy_class_name = "ActorCriticTar"
+        algorithm_class_name = 'PPOTAR'
         max_iterations = 30000
         # run_name = 'long_reward_barlowtwin_baseline'
-        experiment_name = 'g1_teacher_vq'
+        experiment_name = 'g1_PPOTAR'
         resume = False

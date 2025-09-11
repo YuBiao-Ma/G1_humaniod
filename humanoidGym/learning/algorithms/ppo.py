@@ -4,14 +4,14 @@ import torch.nn as nn
 import torch.optim as optim
 from yaml import warnings
 
-from humanoidGym.algo.ppo.rnd import RandomNetworkDistillation
-from humanoidGym.algo.ppo.utils import data_augmentation_func, smooth_transition, string_to_callable
+from humanoidGym.learning.algorithms.rnd import RandomNetworkDistillation
+from humanoidGym.learning.utils.helper import data_augmentation_func, smooth_transition, string_to_callable
 from humanoidGym.utils.helpers import exponential_progress
 
-from .actor_critic import ActorCritic
-from .rollout_storage import RolloutStorage
+from ..modules.actor_critic import ActorCritic
+from ..storage.rollout_storage import RolloutStorage
 
-class TeacherPPO:
+class PPO:
     """Proximal Policy Optimization algorithm (https://arxiv.org/abs/1707.06347)."""
 
     actor_critic: ActorCritic
@@ -33,6 +33,7 @@ class TeacherPPO:
         schedule="fixed",
         desired_kl=0.01,
         device="cpu",
+        aux_loss_coef=[1.0],
         # RND parameters
         rnd_cfg: Union[dict, None] = None,
         # Symmetry parameters
@@ -131,7 +132,7 @@ class TeacherPPO:
         if self.actor_critic.is_recurrent:
             self.transition.hidden_states = self.actor_critic.get_hidden_states()
         # Compute the actions and values
-        self.transition.actions = self.actor_critic.act(obs,critic_obs).detach()
+        self.transition.actions = self.actor_critic.act(obs).detach()
         self.transition.values = self.actor_critic.evaluate(critic_obs).detach()
         self.transition.actions_log_prob = self.actor_critic.get_actions_log_prob(self.transition.actions).detach()
         self.transition.action_mean = self.actor_critic.action_mean.detach()
@@ -179,12 +180,40 @@ class TeacherPPO:
         grad_log_prob = torch.autograd.grad(actions_log_prob_batch.sum(), obs_batch, create_graph=True)[0]
         gradient_penalty_loss = torch.sum(torch.square(grad_log_prob), dim=-1).mean()
         return gradient_penalty_loss
+    
+    def _compute_auxiliary_loss(self, batch: dict) -> dict:
+        """Compute any auxiliary loss. Override this in subclasses if needed."""
+        return {}
+    
+    def _compute_surrogate_loss(self, batch):
+    
+        ratio = torch.exp(batch["actions_log_prob"] - torch.squeeze(batch["old_actions_log_prob"]))
+        advantages = torch.squeeze(batch["advantages"]).clone()
+        surrogate = advantages * ratio
+        surrogate_clipped = advantages * torch.clamp(ratio, 1.0 - self.clip_param, 1.0 + self.clip_param)
+        return torch.clamp(-torch.min(surrogate, surrogate_clipped).mean(), -1e2, 1e2)
+    
+  
+
+    def _compute_value_loss(self, batch):
+        if self.use_clipped_value_loss:
+            value_clipped = batch["target_values"] + (batch["value"] - batch["target_values"]).clamp(
+                -self.clip_param, self.clip_param
+            )
+            value_losses = (batch["value"] - batch["returns"]).pow(2)
+            value_losses_clipped = (value_clipped - batch["returns"]).pow(2)
+            value_loss = torch.max(value_losses, value_losses_clipped).mean()
+        else:
+            value_loss = (batch["returns"] - batch["value"]).pow(2).mean()
+        return self.value_loss_coef * value_loss
+    
+     
 
     def update(self,iter):  # noqa: C901
         mean_value_loss = 0
         mean_surrogate_loss = 0
-        mean_entropy = 0
-        mean_subtask_loss = 0
+        mean_entropy_loss = 0
+        mean_aux_loss = {} 
         mean_smooth_loss = 0
         # -- RND loss
         if self.rnd:
@@ -204,24 +233,20 @@ class TeacherPPO:
             generator = self.storage.mini_batch_generator(self.num_mini_batches, self.num_learning_epochs)
 
         # iterate over batches
-        for (
-            obs_batch,
-            critic_obs_batch,
-            actions_batch,
-            target_values_batch,
-            advantages_batch,
-            returns_batch,
-            old_actions_log_prob_batch,
-            old_mu_batch,
-            old_sigma_batch,
-            hid_states_batch,
-            masks_batch,
-            rnd_state_batch,
+        for batch in generator:
+           
+
+            # Unpack the needed batch keys
+            obs_batch = batch["obs"]
+            critic_obs_batch = batch["critic_obs"]
+            actions_batch = batch["actions"]
+            old_mu_batch = batch["old_mu"]
+            old_sigma_batch = batch["old_sigma"]
+            hid_states_batch = batch["hid_states"]  # Tuple (hid_a, hid_c)
+            masks_batch = batch["masks"]
+            rnd_state_batch = batch["rnd_state"]
+
             
-            next_obs_batch,
-            next_critic_obs_batch,
-            cont_batch
-        ) in generator:
 
             self.actor_critic.set_random(iter)
             # number of augmentations per sample
@@ -250,19 +275,18 @@ class TeacherPPO:
                 advantages_batch = advantages_batch.repeat(num_aug, 1)
                 returns_batch = returns_batch.repeat(num_aug, 1)
 
-            # Recompute actions log prob and entropy for current batch of transitions
-            # Note: we need to do this because we updated the actor_critic with the new parameters
-            # -- actor
-            # obs_est_batch = obs_batch.clone()
-            # obs_est_batch.requires_grad_()
+          
             
-            self.actor_critic.act(obs_batch, critic_obs_batch,masks=masks_batch, hidden_states=hid_states_batch[0])
-            # self.actor_critic.act(obs_est_batch, masks=masks_batch, hidden_states=hid_states_batch[0])
-            actions_log_prob_batch = self.actor_critic.get_actions_log_prob(actions_batch)
+            self.actor_critic.act(obs_batch, masks=masks_batch, hidden_states=hid_states_batch[0])
+         
+            batch["actions_log_prob"] = self.actor_critic.get_actions_log_prob(actions_batch)
+
             # -- critic
             value_batch = self.actor_critic.evaluate(
                 critic_obs_batch, masks=masks_batch, hidden_states=hid_states_batch[1]
             )
+            batch["value"] = value_batch[0] if self.actor_critic.is_recurrent else value_batch
+            
             # -- entropy
             # we only keep the entropy of the first augmentation (the original one)
             mu_batch = self.actor_critic.action_mean[:original_batch_size]
@@ -289,61 +313,23 @@ class TeacherPPO:
                     for param_group in self.optimizer.param_groups:
                         param_group["lr"] = self.learning_rate
                         
-            # # add subtask update in actor critic model
-            # if hasattr( self.actor_critic, 'update' ) and callable(self.actor_critic.update):
-            #     #subtask_loss = self.actor_critic.subtask_loss(obs_batch,critic_obs_batch[:,:3])#self.actor_critic.update(obs_batch,critic_obs_batch[:,:3])
-            #     subtask_loss = self.actor_critic.update(obs_batch,critic_obs_batch)
-            #     loss+=subtask_loss
-            #     mean_subtask_loss += subtask_loss.item()
+     
 
-            # Surrogate loss
-            ratio = torch.exp(actions_log_prob_batch - torch.squeeze(old_actions_log_prob_batch))
-            surrogate = -torch.squeeze(advantages_batch) * ratio
-            surrogate_clipped = -torch.squeeze(advantages_batch) * torch.clamp(
-                ratio, 1.0 - self.clip_param, 1.0 + self.clip_param
-            )
-            surrogate_loss = torch.max(surrogate, surrogate_clipped).mean()
-
-            # Value function loss
-            if self.use_clipped_value_loss:
-                value_clipped = target_values_batch + (value_batch - target_values_batch).clamp(
-                    -self.clip_param, self.clip_param
-                )
-                value_losses = (value_batch - returns_batch).pow(2)
-                value_losses_clipped = (value_clipped - returns_batch).pow(2)
-                value_loss = torch.max(value_losses, value_losses_clipped).mean()
-            else:
-                value_loss = (returns_batch - value_batch).pow(2).mean()
-
-            loss = surrogate_loss + self.value_loss_coef * value_loss - self.entropy_coef * entropy_batch.mean() #+  smooth_loss_coeff * smooth_loss
-
-            # # add subtask update in actor critic model
-            # if hasattr( self.actor_critic, 'update' ) and callable(self.actor_critic.update):
-            #     #subtask_loss = self.actor_critic.subtask_loss(obs_batch,critic_obs_batch[:,:3])#self.actor_critic.update(obs_batch,critic_obs_batch[:,:3])
-            #     subtask_loss = self.actor_critic.update(obs_batch,critic_obs_batch)
-            #     loss+=subtask_loss
-            #     mean_subtask_loss += subtask_loss.item()
-            # #smooth loss
-            # epsilon = self.smoothness_lower_bound / (self.smoothness_upper_bound - self.smoothness_lower_bound)
-            # policy_smooth_coef = self.smoothness_upper_bound * epsilon 
-            # # policy_smooth_coef = smooth_transition(current_step=iter,
-            # #                                        start_step=3000,
-            # #                                        transition_duration=3000,
-            # #                                        start_value=0.1,
-            # #                                        end_value=0.2)
-            # value_smooth_coef = self.value_smoothness_coef * policy_smooth_coef
-                
-            # mix_weights = cont_batch * (torch.rand_like(cont_batch) - 0.5) * 2.0
             
-            # mix_obs_batch = obs_batch + mix_weights * (next_obs_batch - obs_batch)
-            # mix_critic_batch = critic_obs_batch + mix_weights * (next_critic_obs_batch - critic_obs_batch)
 
-            # policy_smooth_loss = torch.square(torch.norm(mu_batch - self.actor_critic.act_inference(mix_obs_batch), dim=-1)).mean()
-            # value_smooth_loss = torch.square(torch.norm(value_batch - self.actor_critic.evaluate(mix_critic_batch), dim=-1)).mean()
+          
+            surrogate_loss = self._compute_surrogate_loss(batch)
+            value_loss = self._compute_value_loss(batch)
+            entropy_loss = -self.entropy_coef * entropy_batch.mean()
+            aux_loss_dict = self._compute_auxiliary_loss(batch)
+            aux_loss = sum(aux_loss_dict.values())
+
+            loss = surrogate_loss + value_loss + entropy_loss + aux_loss  
+           
             
-            # smooth_loss = policy_smooth_coef * policy_smooth_loss + value_smooth_coef * value_smooth_loss
-            # # smooth_loss = 0.1 * policy_smooth_loss + value_smooth_coef * value_smooth_loss
-            # loss += smooth_loss
+ 
+
+            
             
             # Symmetry loss
             if self.symmetry:
@@ -355,10 +341,9 @@ class TeacherPPO:
                     )
                     # compute number of augmentations per sample
                     num_aug = int(obs_batch.shape[0] / original_batch_size)
-                    critic_obs_batch2 = torch.cat([critic_obs_batch]*2,dim=0)
 
                 # actions predicted by the actor for symmetrically-augmented observations
-                mean_actions_batch = self.actor_critic.act_inference(obs_batch.detach().clone(),critic_obs_batch2.detach().clone())
+                mean_actions_batch = self.actor_critic.act_inference(obs_batch.detach().clone())
 
                 # compute the symmetrically augmented actions
                 # note: we are assuming the first augmentation is the original one.
@@ -388,19 +373,16 @@ class TeacherPPO:
                 # compute the loss as the mean squared error
                 mseloss = torch.nn.MSELoss()
                 rnd_loss = mseloss(predicted_embedding, target_embedding.detach())
-                
+
+            
+               
             # -- For PPO
             self.optimizer.zero_grad()
             loss.backward()
             nn.utils.clip_grad_norm_(self.actor_critic.parameters(), self.max_grad_norm)
             self.optimizer.step()
             
-            # # add subtask update in actor critic model
-            if hasattr( self.actor_critic, 'update' ) and callable(self.actor_critic.update):
-                #subtask_loss = self.actor_critic.subtask_loss(obs_batch,critic_obs_batch[:,:3])#self.actor_critic.update(obs_batch,critic_obs_batch[:,:3])
-                subtask_loss = self.actor_critic.update(obs_batch[:original_batch_size],critic_obs_batch)
-                #loss+=subtask_loss
-                mean_subtask_loss += subtask_loss.item()
+       
                 
             
             # -- For RND
@@ -411,8 +393,14 @@ class TeacherPPO:
 
             # Store the losses
             mean_value_loss += value_loss.item()
-            mean_surrogate_loss += surrogate_loss.item()
-            mean_entropy += entropy_batch.mean().item()
+            mean_surrogate_loss += surrogate_loss.item()     
+            mean_entropy_loss += entropy_loss.item()
+
+            for key, value in aux_loss_dict.items():
+                if f"mean_{key}_loss" not in mean_aux_loss:
+                    mean_aux_loss[f"mean_{key}_loss"] = 0.0
+                mean_aux_loss[f"mean_{key}_loss"] += value.item()
+           
             mean_smooth_loss += 0.0#smooth_loss.item()
             # -- RND loss
             if mean_rnd_loss is not None:
@@ -421,19 +409,26 @@ class TeacherPPO:
             if mean_symmetry_loss is not None:
                 mean_symmetry_loss += symmetry_loss.item()
 
-        # -- For PPO
-        num_updates = self.num_learning_epochs * self.num_mini_batches
-        mean_value_loss /= num_updates
-        mean_surrogate_loss /= num_updates
-        mean_subtask_loss /= num_updates
-        mean_smooth_loss /= num_updates
-        # -- For RND
-        if mean_rnd_loss is not None:
-            mean_rnd_loss /= num_updates
-        # -- For Symmetry
-        if mean_symmetry_loss is not None:
-            mean_symmetry_loss /= num_updates
+
+            num_updates = self.num_learning_epochs * self.num_mini_batches
+            
+            # -- For RND
+            if mean_rnd_loss is not None:
+                mean_rnd_loss /= num_updates
+            # -- For Symmetry
+            if mean_symmetry_loss is not None:
+                mean_symmetry_loss /= num_updates
+                
+            mean_loss = {
+                    "value_function": mean_value_loss / num_updates,
+                    "surrogate": mean_surrogate_loss / num_updates,
+                    "entropy_loss": mean_entropy_loss / num_updates,
+                    "mean_smooth_loss": mean_smooth_loss / num_updates,
+                }
+            for key in mean_aux_loss:
+                    mean_loss[key] = mean_aux_loss[key] / num_updates
+            
         # -- Clear the storage
         self.storage.clear()
 
-        return mean_value_loss, mean_surrogate_loss, mean_entropy, mean_rnd_loss, mean_symmetry_loss,mean_subtask_loss,mean_smooth_loss
+        return mean_loss,mean_rnd_loss,mean_symmetry_loss

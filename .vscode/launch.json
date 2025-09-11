@@ -14,7 +14,7 @@
                 "--task", "g1_teacher",
                 "--num_envs", "4096",
                 "--headless",
-                "--experiment_name","g1_vq_future_latent",
+                // "--experiment_name","g1_vq",
                 // "--resume",
             ]
         },
@@ -27,7 +27,7 @@
             "args": [
                 "--task", "g1_teacher",
                 "--num_envs", "1",
-                "--experiment_name","g1_vq_future_latent",
+                // "--experiment_name","g1_vq",
                  "--num_envs", "16",
                 //  "--load_run=Sep02_14-50-32_long_reward_barlowtwin_baseline"
               

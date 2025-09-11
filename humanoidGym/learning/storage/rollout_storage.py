@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 
-from .utils import split_and_pad_trajectories
+from ..utils import split_and_pad_trajectories
 
 class RolloutStorage:
     class Transition:
@@ -277,10 +277,25 @@ class RolloutStorage:
 
         
                 # Yield the mini-batch
-                yield obs_batch, critic_observations_batch, actions_batch, target_values_batch, advantages_batch, returns_batch, old_actions_log_prob_batch, old_mu_batch, old_sigma_batch, (
-                    None,
-                    None,
-                ), None, rnd_state_batch,next_obs_batch,next_critic_observations_batch,cont_batch
+                yield {
+                    "obs": obs_batch,
+                    "next_obs": next_obs_batch,
+                    "critic_obs": critic_observations_batch,
+                    "next_critic_obs": next_critic_observations_batch,
+                    "actions": actions_batch,
+                    "target_values": target_values_batch,
+                    "returns": returns_batch,
+                    "old_actions_log_prob": old_actions_log_prob_batch,
+                    "advantages": advantages_batch,
+                    "old_mu": old_mu_batch,
+                    "old_sigma": old_sigma_batch,
+                    "hid_states": (None, None),  # No RNN states for feedforward policies
+                    "next_hid_states": (None, None),
+                    "rnd_state": rnd_state_batch, 
+                    "cont_batch": cont_batch,
+                    "masks": None,  # No masks required for standard batch processing
+                    "env_idx": batch_idx // self.num_transitions_per_env,
+                }
 
     # for RNNs only
     def recurrent_mini_batch_generator(self, num_mini_batches, num_epochs=8):

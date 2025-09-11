@@ -4,14 +4,14 @@ import torch.nn as nn
 import torch.optim as optim
 from yaml import warnings
 
-from humanoidGym.algo.ppo.rnd import RandomNetworkDistillation
-from humanoidGym.algo.ppo.utils import data_augmentation_func, smooth_transition, string_to_callable
+from humanoidGym.learning.algorithms.rnd import RandomNetworkDistillation
+from humanoidGym.learning.utils import data_augmentation_func, smooth_transition, string_to_callable
 from humanoidGym.utils.helpers import exponential_progress
 
-from .actor_critic import ActorCritic
-from .rollout_storage import RolloutStorage
+from ..modules.actor_critic import ActorCritic
+from ..storage.rollout_storage import RolloutStorage
 
-class PPO:
+class TeacherPPO:
     """Proximal Policy Optimization algorithm (https://arxiv.org/abs/1707.06347)."""
 
     actor_critic: ActorCritic
@@ -131,7 +131,7 @@ class PPO:
         if self.actor_critic.is_recurrent:
             self.transition.hidden_states = self.actor_critic.get_hidden_states()
         # Compute the actions and values
-        self.transition.actions = self.actor_critic.act(obs).detach()
+        self.transition.actions = self.actor_critic.act(obs,critic_obs).detach()
         self.transition.values = self.actor_critic.evaluate(critic_obs).detach()
         self.transition.actions_log_prob = self.actor_critic.get_actions_log_prob(self.transition.actions).detach()
         self.transition.action_mean = self.actor_critic.action_mean.detach()
@@ -256,7 +256,7 @@ class PPO:
             # obs_est_batch = obs_batch.clone()
             # obs_est_batch.requires_grad_()
             
-            self.actor_critic.act(obs_batch, masks=masks_batch, hidden_states=hid_states_batch[0])
+            self.actor_critic.act(obs_batch, critic_obs_batch,masks=masks_batch, hidden_states=hid_states_batch[0])
             # self.actor_critic.act(obs_est_batch, masks=masks_batch, hidden_states=hid_states_batch[0])
             actions_log_prob_batch = self.actor_critic.get_actions_log_prob(actions_batch)
             # -- critic
@@ -355,9 +355,10 @@ class PPO:
                     )
                     # compute number of augmentations per sample
                     num_aug = int(obs_batch.shape[0] / original_batch_size)
+                    critic_obs_batch2 = torch.cat([critic_obs_batch]*2,dim=0)
 
                 # actions predicted by the actor for symmetrically-augmented observations
-                mean_actions_batch = self.actor_critic.act_inference(obs_batch.detach().clone())
+                mean_actions_batch = self.actor_critic.act_inference(obs_batch.detach().clone(),critic_obs_batch2.detach().clone())
 
                 # compute the symmetrically augmented actions
                 # note: we are assuming the first augmentation is the original one.

@@ -9,7 +9,7 @@ import torch
 import torch.nn as nn
 
 from .normalizer import EmpiricalDiscountedVariationNormalization, EmpiricalNormalization
-from .utils import resolve_nn_activation
+from ..utils import resolve_nn_activation
 
 
 class RandomNetworkDistillation(nn.Module):

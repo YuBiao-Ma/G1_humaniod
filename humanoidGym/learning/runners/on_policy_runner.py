@@ -7,11 +7,11 @@ from typing import Union
 from torch.utils.tensorboard import SummaryWriter
 import torch
 
-from .ppo import PPO
-from .teacher_ppo import TeacherPPO
-from .actor_critic import ActorCritic, ActorCritic_Teacher,InferenceActor,InferenceTeacherActor
-from .normalizer import EmpiricalDiscountedVariationNormalization, EmpiricalHistoryNormalization,EmpiricalNormalization
-from humanoidGym.algo import VecEnv
+from ..algorithms import *
+
+from ..modules import *
+from ..algorithms.normalizer import EmpiricalDiscountedVariationNormalization, EmpiricalHistoryNormalization,EmpiricalNormalization
+from humanoidGym.learning import VecEnv
 
 
 class OnPolicyRunner:
@@ -189,7 +189,7 @@ class OnPolicyRunner:
 
             # Update policy
             # Note: we keep arguments here since locals() loads them
-            mean_value_loss, mean_surrogate_loss, mean_entropy, mean_rnd_loss, mean_symmetry_loss,mean_subtask_loss,mean_smooth_loss = self.alg.update(it)
+            mean_loss ,mean_rnd_loss,mean_symmetry_loss = self.alg.update(it)
             stop = time.time()
             learn_time = stop - start
             self.current_learning_iteration = it
@@ -240,12 +240,12 @@ class OnPolicyRunner:
         fps = int(self.num_steps_per_env * self.env.num_envs / (locs["collection_time"] + locs["learn_time"]))
 
         # -- Losses
-        self.writer.add_scalar("Loss/value_function", locs["mean_value_loss"], locs["it"])
-        self.writer.add_scalar("Loss/surrogate", locs["mean_surrogate_loss"], locs["it"])
-        self.writer.add_scalar("Loss/entropy", locs["mean_entropy"], locs["it"])
-        self.writer.add_scalar("Loss/subtask", locs["mean_subtask_loss"], locs["it"])
+        if locs["mean_loss"] is not None:
+            for loss_name, loss_value in locs.get("mean_loss", {}).items():
+                self.writer.add_scalar(f"Loss/{loss_name}", loss_value or 0.0, locs["it"])
+                
         self.writer.add_scalar("Loss/learning_rate", self.alg.learning_rate, locs["it"])
-        self.writer.add_scalar("Loss/smooth", locs["mean_smooth_loss"],locs["it"])
+       
         if self.alg.rnd:
             self.writer.add_scalar("Loss/rnd", locs["mean_rnd_loss"], locs["it"])
         if self.alg.symmetry:
@@ -278,9 +278,10 @@ class OnPolicyRunner:
                 f"""{str.center(width, ' ')}\n\n"""
                 f"""{'Computation:':>{pad}} {fps:.0f} steps/s (collection: {locs[
                             'collection_time']:.3f}s, learning {locs['learn_time']:.3f}s)\n"""
-                f"""{'Value function loss:':>{pad}} {locs['mean_value_loss']:.4f}\n"""
-                f"""{'Surrogate loss:':>{pad}} {locs['mean_surrogate_loss']:.4f}\n"""
             )
+            if locs["mean_loss"] is not None:
+                for loss_name, loss_value in locs.get("mean_loss", {}).items():
+                    log_string += f"""{f'{loss_name}:':>{pad}} {loss_value:.4f}\n"""
 
             # -- For symmetry
             if self.alg.symmetry:
@@ -304,10 +305,11 @@ class OnPolicyRunner:
                 f"""{'#' * width}\n"""
                 f"""{str.center(width, ' ')}\n\n"""
                 f"""{'Computation:':>{pad}} {fps:.0f} steps/s (collection: {locs[
-                            'collection_time']:.3f}s, learning {locs['learn_time']:.3f}s)\n"""
-                f"""{'Value function loss:':>{pad}} {locs['mean_value_loss']:.4f}\n"""
-                f"""{'Surrogate loss:':>{pad}} {locs['mean_surrogate_loss']:.4f}\n"""
+                            'collection_time']:.3f}s, learning {locs['learn_time']:.3f}s)\n""" 
             )
+            if locs["mean_loss"] is not None:
+                for loss_name, loss_value in locs.get("mean_loss", {}).items():
+                    log_string += f"""{f'{loss_name}:':>{pad}} {loss_value:.4f}\n"""
             # -- For symmetry
             if self.alg.symmetry:
                 log_string += f"""{'Symmetry loss:':>{pad}} {locs['mean_symmetry_loss']:.4f}\n"""
@@ -387,9 +389,6 @@ class OnPolicyRunner:
         if self.cfg["empirical_normalization"]:
             if device is not None:
                 self.obs_normalizer.to(device)
-            if self.cfg["algorithm_class_name"]=="TeacherPPO":
-                policy = InferenceTeacherActor(self.alg.actor_critic.actor_teacher_backbone,self.obs_normalizer,self.critic_obs_normalizer)
-            else:
                 policy = InferenceActor(self.alg.actor_critic.actor_teacher_backbone,self.obs_normalizer)
             policy.eval()
         return policy

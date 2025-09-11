@@ -7,7 +7,7 @@ import random
 import os
 import copy
 
-from humanoidGym.algo.ppo.normalizer import EmpiricalNormalization
+from humanoidGym.learning.algorithms.normalizer import EmpiricalNormalization
 
 def get_activation(act_name):
     if act_name == "elu":

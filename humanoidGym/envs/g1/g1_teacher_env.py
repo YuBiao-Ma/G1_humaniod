@@ -9,7 +9,7 @@ import torch.nn.functional as F
 import os
 import random
 import time
-from humanoidGym.algo.ppo.utils import build_mirror_ls
+from humanoidGym.learning.utils import build_mirror_ls
 from humanoidGym.utils import exponential_progress
 
 def copysign_new(a, b):
