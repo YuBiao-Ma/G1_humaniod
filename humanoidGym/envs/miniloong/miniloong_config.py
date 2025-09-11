@@ -71,7 +71,7 @@ class MiniloongCfg( LeggedRobotCfg ):
         kd_range = [0.8,1.2]
         
         add_action_lag = True
-        action_lag_timesteps_range = [0,5]
+        action_lag_timesteps_range = [0,4]
         
         randomize_restitution = False
         restitution_range = [0.0,1.0]
@@ -190,7 +190,7 @@ class MiniloongCfg( LeggedRobotCfg ):
         obs_mirror = ["base_lin_vel","commands","phase","stand_cmd","base_ang_vel","projected_gravity","dofs","dofs","dofs"]
     
     class commands:
-        curriculum = True
+        curriculum = False
         max_curriculum = 2
         num_commands = 4 # default: lin_vel_x, lin_vel_y, ang_vel_yaw, heading (in heading mode ang_vel_yaw is recomputed from heading error)
         resampling_time = 10. # time before command are changed[s]
@@ -222,7 +222,7 @@ class MiniloongCfg( LeggedRobotCfg ):
         soft_dof_vel_limit = 0.9
         soft_torque_limit = 0.9
         
-        base_height_target = 0.72
+        base_height_target = 0.78
         only_positive_rewards = True
         
         target_joint_pos_scale = 0.26
@@ -257,8 +257,8 @@ class MiniloongCfg( LeggedRobotCfg ):
             # base pos
             default_joint_pos = 1
             orientation = 1.0
-            # base_height_plus = 1
-            base_height = 0.5
+            base_height_plus = 1
+            # base_height = 0.5
             base_acc = 0.2
             
             # energy
@@ -269,7 +269,7 @@ class MiniloongCfg( LeggedRobotCfg ):
             ankle_roll_action_smoothness = -0.005
           
             torques = -0.00001
-            power = -0.005
+            power = -1e-5
             dof_vel = -1e-5
             dof_acc = -2.5e-7
             
@@ -344,7 +344,7 @@ class MiniloongCfgPPO( LeggedRobotCfgPPO ):
 
     class algorithm( LeggedRobotCfgPPO.algorithm ):
         class_name = 'TeacherPPO'
-        entropy_coef = 0.01
+        entropy_coef = 0.005
         learning_rate = 1e-3
         max_grad_norm = 1
         

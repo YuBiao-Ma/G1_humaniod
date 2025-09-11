@@ -223,9 +223,9 @@ class G1TeacherCfg( LeggedRobotCfg ):
         max_contact_force = 500
         tracking_sigma = 5
         
-        min_dist = 0.1
+        min_dist = 0.2
         # max_dist = 0.8
-        max_dist = 0.3                
+        max_dist = 0.6                
         
         class scales( LeggedRobotCfg.rewards.scales ):
            
@@ -333,8 +333,8 @@ class G1TeacherCfgPPO( LeggedRobotCfgPPO ):
         activation = 'elu' # can be elu, relu, selu, crelu, lrelu, tanh, sigmoid
 
     class algorithm( LeggedRobotCfgPPO.algorithm ):
-        class_name = 'TeacherPPO'
-        entropy_coef = 0.01
+        class_name = 'PPO'
+        entropy_coef = 0.005
         learning_rate = 1e-3
         max_grad_norm = 1
         
@@ -373,9 +373,9 @@ class G1TeacherCfgPPO( LeggedRobotCfgPPO ):
             
     class runner( LeggedRobotCfgPPO.runner ):
         empirical_normalization = True
-        policy_class_name = "ActorCritic_Teacher"
-        algorithm_class_name = 'TeacherPPO'
+        policy_class_name = "ActorCritic"
+        algorithm_class_name = 'PPO'
         max_iterations = 30000
-        run_name = 'long_reward_barlowtwin_baseline'
+        # run_name = 'long_reward_barlowtwin_baseline'
         experiment_name = 'g1_teacher_vq'
         resume = False

@@ -80,7 +80,7 @@ class ActorCritic(nn.Module):
         #                         activation=activation,
         #                         latent_dim=16)
         #MlpVqvaeFallAnglePredictRegressionActor
-        self.actor_teacher_backbone = MlpLongEstLayerNormFallPredictRegressionActor(num_prop=num_prop,#remove linear vel
+        self.actor_teacher_backbone = MlpVqvaeLongEstLayerNormFallPredictRegressionActor(num_prop=num_prop,#remove linear vel
                                 num_hist=num_hist,
                                 num_actions=num_actions,
                                 actor_dims=[512,256,128],

@@ -11476,12 +11476,13 @@ class MlpVqvaeLongEstLayerNormFallPredictRegressionActor(nn.Module):
         
         with torch.no_grad():
             encode = torch.cat([self.estimator_backbone(short_hist_flatten),long_encode],dim=-1)
-            latents = self.predict_latent_layer(encode)
+            _,_,future_latent,_ = self.Vae(obs_hist[:,-1,9:])
+            # latents = self.predict_latent_layer(encode)
             predicted_vel = self.predict_vel_layer(encode)
             predicted_contact = self.predict_contact_layer(encode)
             predicted_grad_vec = self.predict_gravity_vec_layer(encode)
             
-        actor_input = torch.cat([short_encode,long_encode,latents.detach(),predicted_vel.detach(),predicted_contact.detach(),predicted_grad_vec.detach(),obs_hist[:,-1,9:],obs_hist[:,-1,3:6]],dim=-1) # remove linvel
+        actor_input = torch.cat([short_encode,long_encode,future_latent.detach(),predicted_vel.detach(),predicted_contact.detach(),predicted_grad_vec.detach(),obs_hist[:,-1,9:],obs_hist[:,-1,3:6]],dim=-1) # remove linvel
         mean  = self.actor(actor_input)
     
         return mean
@@ -11499,21 +11500,21 @@ class MlpVqvaeLongEstLayerNormFallPredictRegressionActor(nn.Module):
         
         # regression
         with torch.no_grad():
-            _,_,future_latent,_ = self.Vae(obs_hist[:,-1,9:])
+            # _,_,future_latent,_ = self.Vae(obs_hist[:,-1,9:])
             long_encode = self.long_encoder(obs_hist[:,:-1,9:])
         
         encode = torch.cat([self.estimator_backbone(obs_hist[:,-6:-1,9:].reshape(b,-1)),long_encode],dim=-1)
-        predict_latent = self.predict_latent_layer(encode)
+        # predict_latent = self.predict_latent_layer(encode)
         predict_vel = self.predict_vel_layer(encode)
         predict_contact = self.predict_contact_layer(encode)
         predict_gra_vec = self.predict_gravity_vec_layer(encode)
         
-        latent_loss = F.mse_loss(predict_latent,future_latent)
+        # latent_loss = F.mse_loss(predict_latent,future_latent)
         mseloss = F.mse_loss(predict_vel,obs_hist[:,-2,:3].detach())
         contact_loss = F.mse_loss(predict_contact,critic_hist[:,-2,-2:].detach())
         gravity_loss = F.mse_loss(predict_gra_vec,critic_hist[:,-1,6:9].detach())
 
-        loss = loss + mseloss + latent_loss + contact_loss + gravity_loss
+        loss = loss + mseloss  + contact_loss + gravity_loss
         return loss
     
 class MlpVqvaeLongEstLayerNormCmdScaledRegressionActor(nn.Module):

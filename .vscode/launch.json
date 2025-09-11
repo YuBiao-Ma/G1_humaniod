@@ -11,10 +11,10 @@
             "program": "humanoidGym/script/train.py",
             "console": "integratedTerminal",
             "args": [
-                "--task", "miniloong",
-                "--num_envs", "4096",
+                "--task", "g1",
+                "--num_envs", "2000",
                 "--headless",
-                "--experiment_name","miniloong_teacher_no",
+                "--experiment_name","G1_VQ",
                 // "--resume",
             ]
         },
