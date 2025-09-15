@@ -6,6 +6,8 @@ import random
 from isaacgym import gymapi
 from isaacgym import gymutil
 
+import torch.nn as nn
+
 def class_to_dict(obj) -> dict:
     if not  hasattr(obj,"__dict__"):
         return obj
@@ -145,30 +147,82 @@ def get_args():
         args.sim_device += f":{args.sim_device_id}"
     return args
 
-def export_policy_as_jit(env,actor_critic,path,filename='policy'):
-    os.makedirs(path, exist_ok=True)
-    pt_path = os.path.join(path, filename+'.pt')
-    onnx_path = os.path.join(path, filename+'.onnx')
-    model = copy.deepcopy(actor_critic).to('cpu')
-    
-    dummy_input = torch.randn(1,env.cfg.env.num_observations)
-    torch.onnx.export(
-        model,
-        dummy_input,
-        onnx_path,
-        export_params=True,       # 包含模型权重
-        opset_version=11,         # ONNX操作集版本
-        do_constant_folding=True, # 执行常量折叠优化
-        input_names=['input'],    # 输入节点名称
-        output_names=['output'],  # 输出节点名称
-        dynamic_axes={            # 动态维度设置
-            'input': {0: 'batch_size'}, 
-            'output': {0: 'batch_size'}
-        }
-    )
-    
-    # traced_script_module = torch.jit.script(model)
-    # traced_script_module.save(pt_path)
+
+
+def export_policy_as_jit(
+    actor_critic, path, normalizer, filename="policy.onnx", verbose=False
+):
+    """Export policy into a Torch ONNX file.
+
+    Args:
+        actor_critic: The actor-critic torch module.
+        normalizer: The empirical normalizer module. If None, Identity is used.
+        path: The path to the saving directory.
+        filename: The name of exported ONNX file. Defaults to "policy.onnx".
+        verbose: Whether to print the model summary. Defaults to False.
+    """
+    if not os.path.exists(path):
+        os.makedirs(path, exist_ok=True)
+    policy_exporter = _OnnxPolicyExporter(actor_critic, normalizer, verbose)
+    policy_exporter.export(path, filename)
+
+
+
+class _OnnxPolicyExporter(torch.nn.Module):
+    """Exporter of actor-critic into ONNX file."""
+
+    def __init__(self, actor_critic, normalizer=None, verbose=False):
+        super().__init__()
+        self.verbose = verbose
+        self.actor_critic = copy.deepcopy(actor_critic).to("cpu")
+        self.is_recurrent = actor_critic.is_recurrent
+        self.encoder = getattr(actor_critic, "encoder", torch.nn.Identity())
+        self.normalizer = copy.deepcopy(normalizer) if normalizer else torch.nn.Identity()
+        if self.is_recurrent:
+            self.rnn = copy.deepcopy(actor_critic.memory_a.rnn)
+            self.rnn.cpu()
+            self.forward = self.forward_lstm
+
+    def forward_lstm(self, x_in, h_in, c_in):
+        x_in = self.normalizer(x_in)
+        x, (h, c) = self.rnn(x_in.unsqueeze(0), (h_in, c_in))
+        x = x.squeeze(0)
+        return self.actor(x), h, c
+
+    def forward(self, x):
+        return self.actor_critic.act_inference(self.normalizer(x))
+
+    def export(self, path, filename):
+        self.to("cpu")
+        if self.is_recurrent:
+            obs = torch.zeros(1, self.rnn.input_size)
+            h_in = torch.zeros(self.rnn.num_layers, 1, self.rnn.hidden_size)
+            c_in = torch.zeros(self.rnn.num_layers, 1, self.rnn.hidden_size)
+            actions, h_out, c_out = self(obs, h_in, c_in)
+            torch.onnx.export(
+                self,
+                (obs, h_in, c_in),
+                os.path.join(path, filename),
+                export_params=True,
+                opset_version=11,
+                verbose=self.verbose,
+                input_names=["obs", "h_in", "c_in"],
+                output_names=["actions", "h_out", "c_out"],
+                dynamic_axes={},
+            )
+        else:
+            obs = torch.zeros(1, self.actor_critic.num_hist*self.actor_critic.num_obs_h1)
+            torch.onnx.export(
+                self,
+                obs,
+                os.path.join(path, filename),
+                export_params=True,
+                opset_version=11,
+                verbose=self.verbose,
+                input_names=["obs"],
+                output_names=["actions"],
+                dynamic_axes={},
+            )
 
 def exponential_progress(t, max_steps, k=5):
     """

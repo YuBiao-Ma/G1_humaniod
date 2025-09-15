@@ -189,7 +189,7 @@ class OnPolicyRunner:
 
             # Update policy
             # Note: we keep arguments here since locals() loads them
-            mean_loss ,mean_rnd_loss,mean_symmetry_loss = self.alg.update(it)
+            mean_loss ,mean_rnd_loss,mean_symmetry_loss,mean_entropy = self.alg.update(it)
             stop = time.time()
             learn_time = stop - start
             self.current_learning_iteration = it
@@ -245,6 +245,7 @@ class OnPolicyRunner:
                 self.writer.add_scalar(f"Loss/{loss_name}", loss_value or 0.0, locs["it"])
                 
         self.writer.add_scalar("Loss/learning_rate", self.alg.learning_rate, locs["it"])
+        self.writer.add_scalar("Loss/mean_entropy", locs["mean_entropy"], locs["it"])
        
         if self.alg.rnd:
             self.writer.add_scalar("Loss/rnd", locs["mean_rnd_loss"], locs["it"])
@@ -253,6 +254,7 @@ class OnPolicyRunner:
 
         # -- Policy
         self.writer.add_scalar("Policy/mean_noise_std", mean_std.item(), locs["it"])
+       
 
         # -- Performance
         self.writer.add_scalar("Perf/total_fps", fps, locs["it"])
@@ -381,17 +383,40 @@ class OnPolicyRunner:
     #         policy = lambda x: self.alg.actor_critic.act_inference(self.obs_normalizer(x))  # noqa: E731
     #     return policy
     
+   
+    
     def get_inference_policy(self, device=None):
         self.eval_mode()  # switch to evaluation mode (dropout for example)
         if device is not None:
             self.alg.actor_critic.to(device)
-        policy = self.alg.actor_critic.actor_teacher_backbone
+        policy = self.alg.actor_critic.act_inference
         if self.cfg["empirical_normalization"]:
             if device is not None:
                 self.obs_normalizer.to(device)
-                policy = InferenceActor(self.alg.actor_critic.actor_teacher_backbone,self.obs_normalizer)
-            policy.eval()
+
+            def policy(x):
+                return self.alg.actor_critic.act_inference(
+                    self.obs_normalizer(x.view(x.size(0), -1)).view_as(x)
+                )  # noqa: E731
+
         return policy
+    
+    def get_latents(self,device=None):
+        self.eval_mode()  # switch to evaluation mode (dropout for example)
+        if device is not None:
+            self.alg.actor_critic.to(device)
+        policy = self.alg.actor_critic.get_latents
+        if self.cfg["empirical_normalization"]:
+            if device is not None:
+                self.obs_normalizer.to(device)
+
+            def policy(x):
+                return self.alg.actor_critic.get_latents(
+                    self.obs_normalizer(x.view(x.size(0), -1)).view_as(x)
+                )  # noqa: E731
+
+        return policy
+
 
     def train_mode(self):
         # -- PPO

@@ -14,7 +14,7 @@
                 "--task", "g1_teacher",
                 "--num_envs", "4096",
                 "--headless",
-                // "--experiment_name","g1_vq",
+                // "--experiment_name","miniloong_vq",
                 // "--resume",
             ]
         },
@@ -26,10 +26,12 @@
             "console": "integratedTerminal",
             "args": [
                 "--task", "g1_teacher",
-                "--num_envs", "1",
+                "--rl_device=cpu",
+                // "--num_envs", "1",
                 // "--experiment_name","g1_vq",
                  "--num_envs", "16",
-                //  "--load_run=Sep02_14-50-32_long_reward_barlowtwin_baseline"
+                 "--checkpoint=20800",
+                 "--load_run=Sep12_12-20-54_"
               
             ]
         }

@@ -220,6 +220,10 @@ class StateHistoryEncoder(nn.Module):
         else:
             raise NotImplementedError()
 
+    def _sanitize(self,t, clip=None):
+        t = torch.nan_to_num(t, nan=0.0, posinf=1e6, neginf=-1e6)
+        return t.clamp(-clip, clip) if clip is not None else t
+    
     def forward(self, obs):
         bs = obs.shape[0]
         T = self.tsteps

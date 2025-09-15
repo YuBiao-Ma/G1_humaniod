@@ -477,23 +477,25 @@ class G1TeacherRobot(LeggedRobot):
                             self.actions
                             ),dim=-1)
         single_privileged_obs = torch.cat((self.base_lin_vel * self.obs_scales.lin_vel,
-                                    self.base_ang_vel  * self.obs_scales.ang_vel,
-                                    self.projected_gravity,
-                                    self.commands[:, :3] * self.commands_scale,
-                                    (self.dof_pos - self.default_dof_pos) * self.obs_scales.dof_pos,
-                                    self.dof_vel * self.obs_scales.dof_vel,
-                                    self.actions,
-                                    sin_pos,
-                                    cos_pos,
-                                    self.friction,
-                                    #self.contact_mask,
-                                    self.stance_mask,
-                                    diff,
-                                    self.rand_push_force[:,:2],
-                                    self.contact_forces[:,self.feet_indices].view(self.num_envs,-1),
-                                    stand_cmd,
-                                    self.contact_mask
-                                    ),dim=-1)
+                                           self.commands[:, :3] * self.commands_scale,
+                                           sin_pos,
+                                            cos_pos,
+                                            stand_cmd,
+                                            self.base_ang_vel  * self.obs_scales.ang_vel,
+                                            self.projected_gravity,
+                                            
+                                            (self.dof_pos - self.default_dof_pos) * self.obs_scales.dof_pos,
+                                            self.dof_vel * self.obs_scales.dof_vel,
+                                            self.actions,
+                                            
+                                            self.friction,
+                                            #self.contact_mask,
+                                            self.stance_mask,
+                                            diff,
+                                            self.rand_push_force[:,:2],
+                                            self.contact_forces[:,self.feet_indices].view(self.num_envs,-1),
+                                            self.contact_mask
+                                            ),dim=-1)
         
         # add noise if needed
         if self.add_noise:
@@ -863,7 +865,7 @@ class G1TeacherRobot(LeggedRobot):
 
         # Assign rewards based on conditions
         # Speed too low
-        reward[speed_too_low] = -1.0
+        reward[speed_too_low] = -10
         # Speed too high
         reward[speed_too_high] = 0.0
         # Speed within desired range

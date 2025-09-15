@@ -105,7 +105,7 @@ class ActorCriticTar(ActorCriticMlpSlrDblEnc):
         self.critic = AcNet(
             is_policy=False,
             num_out=1,  # Critic output is a single value
-            num_obs=self.num_obs_h1 + self.num_latents + 3,
+            num_obs=self.num_obs_h1 + self.num_latents + 3 + 2, # 3 is linvel ,2 is phase
             hidden_dims=critic_hidden_dims,
             activation=activation,
         )
@@ -133,7 +133,8 @@ class ActorCriticTar(ActorCriticMlpSlrDblEnc):
     def extract_critic(self, observations):
         height = observations[:,:187]
         critic_obs_hist = observations[:,187:].reshape(-1,5,50 + 19 + 6 + 1)
-        prop = torch.cat([critic_obs_hist[..., -1,9:51],critic_obs_hist[..., -1,3:6]],dim=-1)  # [Batch, Time, Dim]
+        # prop = torch.cat([critic_obs_hist[..., -1,9:51],critic_obs_hist[..., -1,3:6]],dim=-1)  # [Batch, Time, Dim]
+        prop = torch.cat([critic_obs_hist[..., -1,9:51],critic_obs_hist[..., -1,3:6],critic_obs_hist[...,-1,6:8]],dim=-1)  # 相对于prop 添加phase
         vel = critic_obs_hist[...,-1, 0:3]
         full_obs = torch.cat([height,critic_obs_hist[...,-1,:]],dim=-1)
         return full_obs, prop, vel

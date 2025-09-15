@@ -73,7 +73,7 @@ class G1TeacherCfg( LeggedRobotCfg ):
         kd_range = [0.8,1.2]
         
         add_action_lag = True
-        action_lag_timesteps_range = [0,30]
+        action_lag_timesteps_range = [0,10]
         
         randomize_restitution = False
         restitution_range = [0.0,1.0]
@@ -256,13 +256,13 @@ class G1TeacherCfg( LeggedRobotCfg ):
             base_acc = 0.2
             # energy
             action_smoothness = -0.02
-            hip_yaw_action_smoothness = -0.005
-            hip_roll_action_smoothness = -0.005
-            ankle_pitch_action_smoothness = -0.005
-            ankle_roll_action_smoothness = -0.005
+            # hip_yaw_action_smoothness = -0.005
+            # hip_roll_action_smoothness = -0.005
+            # ankle_pitch_action_smoothness = -0.005
+            # ankle_roll_action_smoothness = -0.005
           
             torques = -0.00001
-            power = -1e-5
+            # power = -1e-5
             dof_vel = -1e-5
             dof_acc = -2.5e-7
             
@@ -270,10 +270,10 @@ class G1TeacherCfg( LeggedRobotCfg ):
             foot_normal_reward = 0.05
             feet_height_var = 0.5
             
-            ankle_energy = 0.2
-            hip_yaw_energy = 0.2
-            knee_energy = 0.1
-            hip_pitch_energy = 0.1
+            # ankle_energy = 0.2
+            # hip_yaw_energy = 0.2
+            # knee_energy = 0.1
+            # hip_pitch_energy = 0.1
             
             default_joint_yaw = 0.5
             default_joint_ankle_roll = 0.5
@@ -336,7 +336,7 @@ class G1TeacherCfgPPO( LeggedRobotCfgPPO ):
         activation = 'elu' # can be elu, relu, selu, crelu, lrelu, tanh, sigmoid
 
     class algorithm( LeggedRobotCfgPPO.algorithm ):
-        class_name = 'PPOTAR'
+        class_name = 'PPOVQ'
         entropy_coef = 0.01
         learning_rate = 1e-3
         max_grad_norm = 1
@@ -376,9 +376,9 @@ class G1TeacherCfgPPO( LeggedRobotCfgPPO ):
             
     class runner( LeggedRobotCfgPPO.runner ):
         empirical_normalization = True
-        policy_class_name = "ActorCriticTar"
-        algorithm_class_name = 'PPOTAR'
+        policy_class_name = "ActorCriticVq"
+        algorithm_class_name = 'PPOVQ'
         max_iterations = 30000
         # run_name = 'long_reward_barlowtwin_baseline'
-        experiment_name = 'g1_PPOTAR'
+        experiment_name = 'g1_PPOVQ'
         resume = False

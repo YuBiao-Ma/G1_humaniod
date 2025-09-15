@@ -427,6 +427,7 @@ class AcNet(torch.nn.Module):
                     # Initialize last layer with small weights to reduce action dependence on observation
                     nn.init.orthogonal_(last.weight, gain=0.01)  # type: ignore
                     nn.init.zeros_(last.bias)  # Bias is set to zero for unbiased initial actions
+                mlp_layers.append(nn.LayerNorm(hidden_dims[layer_index]))
                 mlp_layers.append(last)
             else:
                 layer = nn.Linear(hidden_dims[layer_index], hidden_dims[layer_index + 1])

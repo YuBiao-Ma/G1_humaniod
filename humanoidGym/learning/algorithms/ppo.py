@@ -213,6 +213,7 @@ class PPO:
         mean_value_loss = 0
         mean_surrogate_loss = 0
         mean_entropy_loss = 0
+        mean_entropy = 0
         mean_aux_loss = {} 
         mean_smooth_loss = 0
         # -- RND loss
@@ -321,6 +322,7 @@ class PPO:
             surrogate_loss = self._compute_surrogate_loss(batch)
             value_loss = self._compute_value_loss(batch)
             entropy_loss = -self.entropy_coef * entropy_batch.mean()
+            mean_entropy += entropy_batch.mean()
             aux_loss_dict = self._compute_auxiliary_loss(batch)
             aux_loss = sum(aux_loss_dict.values())
 
@@ -379,7 +381,9 @@ class PPO:
             # -- For PPO
             self.optimizer.zero_grad()
             loss.backward()
-            nn.utils.clip_grad_norm_(self.actor_critic.parameters(), self.max_grad_norm)
+            params = [p for g in self.optimizer.param_groups for p in g['params'] if p.grad is not None]
+            total_norm = torch.nn.utils.clip_grad_norm_(params, self.max_grad_norm)
+
             self.optimizer.step()
             
        
@@ -395,6 +399,7 @@ class PPO:
             mean_value_loss += value_loss.item()
             mean_surrogate_loss += surrogate_loss.item()     
             mean_entropy_loss += entropy_loss.item()
+            mean_entropy += entropy_batch.mean().item()
 
             for key, value in aux_loss_dict.items():
                 if f"mean_{key}_loss" not in mean_aux_loss:
@@ -431,4 +436,4 @@ class PPO:
         # -- Clear the storage
         self.storage.clear()
 
-        return mean_loss,mean_rnd_loss,mean_symmetry_loss
+        return mean_loss,mean_rnd_loss,mean_symmetry_loss,mean_entropy

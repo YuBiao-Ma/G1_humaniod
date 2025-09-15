@@ -77,7 +77,7 @@ class Terrain:
                 self.add_terrain_to_map(terrain, i, j)
 
     def selected_terrain(self):
-        terrain_type = self.cfg.terrain_kwargs.pop('type')
+        
         for k in range(self.cfg.num_sub_terrains):
             # Env coordinates in the world
             (i, j) = np.unravel_index(k, (self.cfg.num_rows, self.cfg.num_cols))
@@ -85,11 +85,43 @@ class Terrain:
             terrain = terrain_utils.SubTerrain("terrain",
                               width=self.width_per_env_pixels,
                               length=self.width_per_env_pixels,
-                              vertical_scale=self.vertical_scale,
-                              horizontal_scale=self.horizontal_scale)
+                              vertical_scale=self.cfg.vertical_scale,
+                              horizontal_scale=self.cfg.horizontal_scale)
+            if i == 3:
+                terrain_utils.random_uniform_terrain(terrain, min_height=-0.1, max_height=0.15, step=0.005, downsampled_scale=0.2)
+            if i == 1:
+                terrain_utils.pyramid_stairs_terrain(terrain, step_width=0.33, step_height=0.15, platform_size=3.)
+                
+            if i == 2:
+               terrain_utils.discrete_obstacles_terrain(terrain, 0.15, 1, 1.5, 30, platform_size=3.)
+            if i ==0:
+                terrain_utils.pyramid_sloped_terrain(terrain, slope=0.5, platform_size=3.)
 
-            eval(terrain_type)(terrain, **self.cfg.terrain_kwargs.terrain_kwargs)
-            self.add_terrain_to_map(terrain, i, j)
+            if i == 4:
+                terrain_utils.random_uniform_terrain(terrain, min_height=-0.1, max_height=0.15, step=0.005, downsampled_scale=0.2)
+
+            if i == 5:
+                terrain_utils.random_uniform_terrain(terrain, min_height=-0.1, max_height=0.15, step=0.005, downsampled_scale=0.2)
+            self.add_terrain_to_map_myb(terrain, i, j)
+    
+    def add_terrain_to_map_myb(self, terrain, row, col):
+        i = row
+        j = col
+        # map coordinate system
+        start_x = self.border + i * self.length_per_env_pixels
+        end_x = self.border + (i + 1) * self.length_per_env_pixels
+        start_y = self.border + j * self.width_per_env_pixels
+        end_y = self.border + (j + 1) * self.width_per_env_pixels
+        self.height_field_raw[start_x: end_x, start_y:end_y] = terrain.height_field_raw
+
+        env_origin_x = 0 - (0.1) * self.env_width
+        env_origin_y = (0.5) * self.env_width
+        x1 = int((self.env_length/2. - 1) / terrain.horizontal_scale)
+        x2 = int((self.env_length/2. + 1) / terrain.horizontal_scale)
+        y1 = int((self.env_width/2. - 1) / terrain.horizontal_scale)
+        y2 = int((self.env_width/2. + 1) / terrain.horizontal_scale)
+        env_origin_z = np.max(terrain.height_field_raw[x1:x2, y1:y2])*terrain.vertical_scale
+        self.env_origins[i, j] = [env_origin_x, env_origin_y, 0]
     
     # choice select terrain type, difficulty select row, row increase difficulty increase
     def make_terrain(self, choice, difficulty):

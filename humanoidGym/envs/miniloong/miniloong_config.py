@@ -71,7 +71,7 @@ class MiniloongCfg( LeggedRobotCfg ):
         kd_range = [0.8,1.2]
         
         add_action_lag = True
-        action_lag_timesteps_range = [0,40]
+        action_lag_timesteps_range = [0,20]
         
         randomize_restitution = False
         restitution_range = [0.0,1.0]
@@ -173,7 +173,7 @@ class MiniloongCfg( LeggedRobotCfg ):
         # action scale: target angle = actionScale * action + defaultAngle
         action_scale = 0.5
         # decimation: Number of control action updates @ sim DT per policy DT
-        decimation = 20
+        decimation = 4
         use_filter = True
         exp_avg_decay = 0.05
 
@@ -211,7 +211,7 @@ class MiniloongCfg( LeggedRobotCfg ):
         soft_torque_limit = 0.9
         
         base_height_target = 0.76
-        only_positive_rewards = False
+        only_positive_rewards = True
         
         target_joint_pos_scale = 0.26
         # local frame   
@@ -238,8 +238,8 @@ class MiniloongCfg( LeggedRobotCfg ):
             knee_distance = 0.2
             feet_rotation = 0.2
 
-            tracking_lin_vel = 2.5 #1.4
-            tracking_ang_vel = 1.5 #1.1
+            tracking_lin_vel = 2.5
+            tracking_ang_vel = 1.5
             vel_mismatch_exp = 0.5
             low_speed = 0.2
             track_vel_hard = 0.5
@@ -247,16 +247,16 @@ class MiniloongCfg( LeggedRobotCfg ):
             # base pos
             default_joint_pos = 1
             orientation = 1.0
-            base_height_plus = 1
-            # base_height = 0.5
+            # base_height_plus = 1
+            base_height = 0.5
             base_acc = 0.2
             
             # energy
             action_smoothness = -0.02
-            hip_yaw_action_smoothness = -0.005
-            hip_roll_action_smoothness = -0.005
-            ankle_pitch_action_smoothness = -0.005
-            ankle_roll_action_smoothness = -0.005
+            # hip_yaw_action_smoothness = -0.005
+            # hip_roll_action_smoothness = -0.005
+            # ankle_pitch_action_smoothness = -0.005
+            # ankle_roll_action_smoothness = -0.005
           
             torques = -0.00001
             power = -1e-5
@@ -267,10 +267,10 @@ class MiniloongCfg( LeggedRobotCfg ):
             foot_normal_reward = 0.05
             feet_height_var = 0.5
             
-            ankle_energy = 0.2
-            hip_yaw_energy = 0.2
-            knee_energy = 0.1
-            hip_pitch_energy = 0.1
+            # ankle_energy = 0.2
+            # hip_yaw_energy = 0.2
+            # knee_energy = 0.1
+            # hip_pitch_energy = 0.1
             
             default_joint_yaw = 0.5
             # default_joint_ankle_roll = 0.5
@@ -286,7 +286,7 @@ class MiniloongCfg( LeggedRobotCfg ):
             # torque_ankle_pitch_stance = -0.005
            
             
-            termination = -10 #-10
+            termination = -1 #-10
             collision = -10
             
     class normalization:
@@ -297,7 +297,7 @@ class MiniloongCfg( LeggedRobotCfg ):
             dof_vel = 0.05
             height_measurements = 5.0
         clip_observations = 100.
-        clip_actions = 20.
+        clip_actions = 100.
 
     class noise:
         add_noise = True
@@ -311,7 +311,7 @@ class MiniloongCfg( LeggedRobotCfg ):
             height_measurements = 0.1
     
     class sim:
-        dt =  0.001
+        dt =  0.005
         substeps = 1
         gravity = [0., 0. ,-9.81]  # [m/s^2]
         up_axis = 1  # 0 is y, 1 is z
@@ -336,7 +336,7 @@ class MiniloongCfgPPO( LeggedRobotCfgPPO ):
         activation = 'elu' # can be elu, relu, selu, crelu, lrelu, tanh, sigmoid
 
     class algorithm( LeggedRobotCfgPPO.algorithm ):
-        class_name = 'PPO' # TeacherPPO
+        class_name = 'PPOTAR' # TeacherPPO
         entropy_coef = 0.005
         learning_rate = 1e-3
         max_grad_norm = 1
@@ -376,9 +376,9 @@ class MiniloongCfgPPO( LeggedRobotCfgPPO ):
             
     class runner( LeggedRobotCfgPPO.runner ):
         empirical_normalization = True
-        policy_class_name = "ActorCritic" # ActorCritic_Teacher
-        algorithm_class_name = 'PPO'    # TeacherPPO
+        policy_class_name = "ActorCriticTar" # ActorCritic_Teacher
+        algorithm_class_name = 'PPOTAR'    # TeacherPPO
         max_iterations = 30000
         # run_name = 'long_reward_barlowtwin_baseline'
-        experiment_name = 'miniloong_teacher_vq'
+        experiment_name = 'miniloong_PPOTAR'
         resume = False
