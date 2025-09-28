@@ -88,15 +88,15 @@ class Terrain:
                               vertical_scale=self.cfg.vertical_scale,
                               horizontal_scale=self.cfg.horizontal_scale)
             if i == 3:
-                terrain_utils.random_uniform_terrain(terrain, min_height=-0.1, max_height=0.15, step=0.005, downsampled_scale=0.2)
-            if i == 1:
-                terrain_utils.pyramid_stairs_terrain(terrain, step_width=0.33, step_height=0.15, platform_size=3.)
+                terrain_utils.random_uniform_terrain(terrain, min_height=-0.1, max_height=0.18, step=0.005, downsampled_scale=0.2)
+            if i == 0:
+                terrain_utils.pyramid_stairs_terrain(terrain, step_width=0.33, step_height=0.18, platform_size=3.)
                 
             if i == 2:
                terrain_utils.discrete_obstacles_terrain(terrain, 0.15, 1, 1.5, 30, platform_size=3.)
-            if i ==0:
-                terrain_utils.pyramid_sloped_terrain(terrain, slope=0.5, platform_size=3.)
-
+            if i ==1:
+                # terrain_utils.pyramid_sloped_terrain(terrain, slope=0.5, platform_size=3.)
+                terrain_utils.pyramid_stairs_terrain(terrain, step_width=0.35, step_height=0.2, platform_size=3.)
             if i == 4:
                 terrain_utils.random_uniform_terrain(terrain, min_height=-0.1, max_height=0.15, step=0.005, downsampled_scale=0.2)
 

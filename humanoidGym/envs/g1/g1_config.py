@@ -1,21 +1,42 @@
 from humanoidGym.envs.base.legged_robot_config import LeggedRobotCfg, LeggedRobotCfgPPO
 
+
+ARMATURE_5020 = 0.003609725
+ARMATURE_7520_14 = 0.010177520
+ARMATURE_7520_22 = 0.025101925
+ARMATURE_4010 = 0.00425
+
+NATURAL_FREQ = 10 * 2.0 * 3.1415926535  # 10Hz  #62.8318
+DAMPING_RATIO = 2.0
+
+STIFFNESS_5020 = ARMATURE_5020 * NATURAL_FREQ**2  #14.2477
+STIFFNESS_7520_14 = ARMATURE_7520_14 * NATURAL_FREQ**2 #40.1771
+STIFFNESS_7520_22 = ARMATURE_7520_22 * NATURAL_FREQ**2 #99.0906
+STIFFNESS_4010 = ARMATURE_4010 * NATURAL_FREQ**2  #16.7782
+
+DAMPING_5020 = 2.0 * DAMPING_RATIO * ARMATURE_5020 * NATURAL_FREQ #0.9070
+DAMPING_7520_14 = 2.0 * DAMPING_RATIO * ARMATURE_7520_14 * NATURAL_FREQ #2.5577
+DAMPING_7520_22 = 2.0 * DAMPING_RATIO * ARMATURE_7520_22 * NATURAL_FREQ #6.3083
+DAMPING_4010 = 2.0 * DAMPING_RATIO * ARMATURE_4010 * NATURAL_FREQ #1.0681
+
+
 class G1RoughCfg( LeggedRobotCfg ):
     class init_state( LeggedRobotCfg.init_state ):
-        pos = [0.0, 0.0, 0.8] # x,y,z [m]
+        pos = [0.0, 0.0, 0.82] # x,y,z [m]
         default_joint_angles = { # = target angles [rad] when action = 0.0
-           'left_hip_yaw_joint' : 0. ,   
-           'left_hip_roll_joint' : 0,               
-           'left_hip_pitch_joint' : -0.1,         
-           'left_knee_joint' : 0.3,       
-           'left_ankle_pitch_joint' : -0.2,     
-           'left_ankle_roll_joint' : 0,     
-           'right_hip_yaw_joint' : 0., 
-           'right_hip_roll_joint' : 0, 
-           'right_hip_pitch_joint' : -0.1,                                       
-           'right_knee_joint' : 0.3,                                             
-           'right_ankle_pitch_joint': -0.2,                              
-           'right_ankle_roll_joint' : 0,       
+          'left_hip_pitch_joint':      -0.1,
+           'left_hip_roll_joint':        0.0,
+           'left_hip_yaw_joint':         0.0,
+           'left_knee_joint':            0.3,
+           'left_ankle_pitch_joint':    -0.2,
+           'left_ankle_roll_joint':      0.0,
+
+            'right_hip_pitch_joint':    -0.1,
+            'right_hip_roll_joint':      0.0,
+            'right_hip_yaw_joint':       0.0,
+            'right_knee_joint':          0.3,
+            'right_ankle_pitch_joint':  -0.2,
+            'right_ankle_roll_joint':    0.0,     
         }
         target_joint_angles = { # = target angles [rad] when action = 0.0
            'left_hip_yaw_joint' : 0. ,   
@@ -54,7 +75,7 @@ class G1RoughCfg( LeggedRobotCfg ):
         added_mass_range = [-2., 5.]
         
         push_robots = True
-        push_interval_s = 15
+        push_interval_s = 2
         max_push_vel_xy = 1.
         
         randomize_com = True
@@ -70,7 +91,7 @@ class G1RoughCfg( LeggedRobotCfg ):
         kd_range = [0.8,1.2]
         
         add_action_lag = True
-        action_lag_timesteps_range = [0,30]
+        action_lag_timesteps_range = [0,15]
         
         randomize_restitution = False
         restitution_range = [0.0,1.0]
@@ -149,25 +170,64 @@ class G1RoughCfg( LeggedRobotCfg ):
     class control( LeggedRobotCfg.control ):
         # PD Drive parameters:
         control_type = 'P'
-          # PD Drive parameters:
-        stiffness = {'hip_yaw': 100,
-                     'hip_roll': 100,
-                     'hip_pitch': 100,
-                     'knee': 150,
-                     'ankle': 40,
-                     }  # [N*m/rad]
-        damping = {  'hip_yaw': 2,
-                     'hip_roll': 2,
-                     'hip_pitch': 2,
-                     'knee': 4,
-                     'ankle': 2,
-                     }  # [N*m/rad]  # [N*m*s/rad]
+        stiffness = {'left_hip_pitch_joint': STIFFNESS_7520_14,
+                     'left_hip_roll_joint':  STIFFNESS_7520_22,
+                     'left_hip_yaw_joint': STIFFNESS_7520_14,
+                     'left_knee_joint': STIFFNESS_7520_22,
+                     'left_ankle_pitch_joint': 2.0 * STIFFNESS_5020,
+                     'left_ankle_roll_joint': 2.0 * STIFFNESS_5020,
+                     'right_hip_pitch_joint': STIFFNESS_7520_14,
+                     'right_hip_roll_joint':  STIFFNESS_7520_22,
+                     'right_hip_yaw_joint': STIFFNESS_7520_14,
+                     'right_knee_joint': STIFFNESS_7520_22,
+                     'right_ankle_pitch_joint': 2.0 * STIFFNESS_5020,
+                     'right_ankle_roll_joint': 2.0 * STIFFNESS_5020,
+                     'waist_yaw_joint': STIFFNESS_7520_14,
+                     'left_shoulder_pitch_joint': STIFFNESS_5020,
+                     'left_shoulder_roll_joint': STIFFNESS_5020,
+                     'left_shoulder_yaw_joint': STIFFNESS_5020,
+                     'left_elbow_joint': STIFFNESS_5020,
+                     'right_shoulder_pitch_joint': STIFFNESS_5020,
+                     'right_shoulder_roll_joint': STIFFNESS_5020,
+                     'right_shoulder_yaw_joint': STIFFNESS_5020,
+                     'right_elbow_joint': STIFFNESS_5020,
+        }  # [N*m/rad]
+        damping = {  'left_hip_pitch_joint': DAMPING_7520_14,
+                     'left_hip_roll_joint':  DAMPING_7520_22,
+                     'left_hip_yaw_joint': DAMPING_7520_14,
+                     'left_knee_joint': DAMPING_7520_22,
+                     'left_ankle_pitch_joint': 2.0 * DAMPING_5020,
+                     'left_ankle_roll_joint': 2.0 * DAMPING_5020,
+                     'right_hip_pitch_joint': DAMPING_7520_14,
+                     'right_hip_roll_joint':  DAMPING_7520_22,
+                     'right_hip_yaw_joint': DAMPING_7520_14,
+                     'right_knee_joint': DAMPING_7520_22,
+                     'right_ankle_pitch_joint': 2.0 * DAMPING_5020,
+                     'right_ankle_roll_joint': 2.0 * DAMPING_5020,
+                     'waist_yaw_joint': DAMPING_7520_14,
+                     'left_shoulder_pitch_joint': DAMPING_5020,
+                     'left_shoulder_roll_joint': DAMPING_5020,
+                     'left_shoulder_yaw_joint': DAMPING_5020,
+                     'left_elbow_joint': DAMPING_5020,
+                     'right_shoulder_pitch_joint': DAMPING_5020,
+                     'right_shoulder_roll_joint': DAMPING_5020,
+                     'right_shoulder_yaw_joint': DAMPING_5020,
+                     'right_elbow_joint': DAMPING_5020,
+        }
         # action scale: target angle = actionScale * action + defaultAngle
-        action_scale = 0.5
+        action_scales = [
+                0.54754647, 0.35066147, 0.54754647, 0.35066147, 0.43857731, 0.43857731,
+                0.54754647, 0.35066147, 0.54754647, 0.35066147, 0.43857731, 0.43857731,
+                0.54754647,
+                0.43857731, 0.43857731, 0.43857731, 0.43857731,
+                0.43857731, 0.43857731, 0.43857731, 0.43857731]
+                     # [N*m/rad]  # [N*m*s/rad]
+        # action scale: target angle = actionScale * action + defaultAngle
+        
         # decimation: Number of control action updates @ sim DT per policy DT
         decimation = 20
         use_filter = True
-        exp_avg_decay = 0.05
+        exp_avg_decay = 1.0  #40*0.02
 
     class asset( LeggedRobotCfg.asset ):
         file = '{LEGGED_GYM_ROOT_DIR}/humanoidGym/resources/robots/g1_description/g1_12dof.urdf'
@@ -180,17 +240,17 @@ class G1RoughCfg( LeggedRobotCfg ):
         flip_visual_attachments = False
         obs_mirror = ["base_lin_vel","commands","phase","stand_cmd","base_ang_vel","projected_gravity","dofs","dofs","dofs"]
     
-    class commands:
-        curriculum = True
-        max_curriculum = 2
-        num_commands = 4 # default: lin_vel_x, lin_vel_y, ang_vel_yaw, heading (in heading mode ang_vel_yaw is recomputed from heading error)
-        resampling_time = 10. # time before command are changed[s]
-        heading_command = True # if true: compute ang vel command from heading error
-        class ranges:
-            lin_vel_x = [-0.8, 1.0] # min max [m/s]
-            lin_vel_y = [-0.5, 0.5]   # min max [m/s]
-            ang_vel_yaw = [-1, 1]    # min max [rad/s]
-            heading = [-3.14, 3.14]
+    # class commands:
+    #     curriculum = True
+    #     max_curriculum = 2
+    #     num_commands = 4 # default: lin_vel_x, lin_vel_y, ang_vel_yaw, heading (in heading mode ang_vel_yaw is recomputed from heading error)
+    #     resampling_time = 10. # time before command are changed[s]
+    #     heading_command = True # if true: compute ang vel command from heading error
+    #     class ranges:
+    #         lin_vel_x = [-0.8, 1.0] # min max [m/s]
+    #         lin_vel_y = [-0.5, 0.5]   # min max [m/s]
+    #         ang_vel_yaw = [-1, 1]    # min max [rad/s]
+    #         heading = [-3.14, 3.14]
   
     class commands:
         curriculum = False
@@ -213,12 +273,12 @@ class G1RoughCfg( LeggedRobotCfg ):
         soft_dof_vel_limit = 0.9
         soft_torque_limit = 0.9
         
-        base_height_target = 0.82
+        base_height_target = 0.85
         only_positive_rewards = True
         
         target_joint_pos_scale = 0.26#0.26#0.165#0.26#0.165
         # local frame   
-        target_feet_height = -0.72#-1.0    
+        target_feet_height = -0.76#-1.0    
         cycle_time = 0.6
         max_contact_force = 500
         tracking_sigma = 5
@@ -253,24 +313,24 @@ class G1RoughCfg( LeggedRobotCfg ):
             base_acc = 0.2
             # energy
             action_smoothness = -0.02
-            hip_yaw_action_smoothness = -0.005
-            hip_roll_action_smoothness = -0.005
-            ankle_pitch_action_smoothness = -0.005
-            ankle_roll_action_smoothness = -0.005
+            # hip_yaw_action_smoothness = -0.005
+            # hip_roll_action_smoothness = -0.005
+            # ankle_pitch_action_smoothness = -0.005
+            # ankle_roll_action_smoothness = -0.005
           
             torques = -0.00001
-            power = -1e-5
+            # power = -1e-5
             dof_vel = -1e-5
             dof_acc = -2.5e-7
             
-            stumble = -3.0
+            stumble = -5.0
             foot_normal_reward = 0.05
             feet_height_var = 0.5
             
-            ankle_energy = 0.2
-            hip_yaw_energy = 0.2
-            knee_energy = 0.1
-            hip_pitch_energy = 0.1
+            # ankle_energy = 0.2
+            # hip_yaw_energy = 0.2
+            # knee_energy = 0.1
+            # hip_pitch_energy = 0.1
             
             default_joint_yaw = 0.5
             default_joint_ankle_roll = 0.5
@@ -282,9 +342,11 @@ class G1RoughCfg( LeggedRobotCfg ):
             dof_pos_limits = -10.
             dof_torque_limits = -0.1
             # ankle_pitch_limit = 10
+            yaw_error_when_rate_matches = -5
             
-            termination = -100#-10
-            collision = -1
+            termination = -10#-10
+            collision = -10
+            upward = -20
             
     class normalization:
         class obs_scales:
@@ -333,6 +395,7 @@ class G1RoughCfgPPO( LeggedRobotCfgPPO ):
         activation = 'elu' # can be elu, relu, selu, crelu, lrelu, tanh, sigmoid
 
     class algorithm( LeggedRobotCfgPPO.algorithm ):
+        class_name = 'PPOADAPT'
         entropy_coef = 0.01
         learning_rate = 1e-3
         max_grad_norm = 1
@@ -372,8 +435,9 @@ class G1RoughCfgPPO( LeggedRobotCfgPPO ):
             
     class runner( LeggedRobotCfgPPO.runner ):
         empirical_normalization = True
-        policy_class_name = "ActorCritic"
+        policy_class_name = "ActorCriticAdapt"
+        algorithm_class_name = 'PPOADAPT'
         max_iterations = 30000
-        run_name = 'long_reward_barlowtwin_baseline'
-        experiment_name = 'g1'
+        # run_name = 'long_reward_barlowtwin_baseline'
+        experiment_name = 'g1_PPOADAPT'
         resume = False

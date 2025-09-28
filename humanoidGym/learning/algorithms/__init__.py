@@ -3,3 +3,5 @@ from .teacher_ppo import TeacherPPO
 from .vq_ppo import PPOVQ
 from .tar_ppo import PPOTAR
 from .lse_ppo import PPOLSE
+from .adapt_ppo import PPOADAPT
+from .dream_ppo import PPODREAM

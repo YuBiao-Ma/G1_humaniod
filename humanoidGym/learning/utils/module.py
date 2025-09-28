@@ -148,7 +148,84 @@ class PureVqvaeEMA(nn.Module):
         vq_loss = 0.25*commitment_loss 
 
         return recon_loss + vq_loss
+
+class PureBetaVAE(nn.Module):
+
+    def __init__(self,
+                 in_dim= 45,
+                 latent_dim = 16,
+                 encoder_hidden_dims = [64,32],
+                 decoder_hidden_dims = [32,64],
+                 output_dim = 45,
+                 beta: int = 0.1) -> None:
+        
+        super(PureBetaVAE, self).__init__()
+
+        self.latent_dim = latent_dim
+        self.beta = beta
+        
+        encoder_layers = []
+        encoder_layers.append(nn.Sequential(nn.Linear(in_dim, encoder_hidden_dims[0]),
+                                            nn.ELU()))
+        for l in range(len(encoder_hidden_dims)-1):
+            encoder_layers.append(nn.Sequential(nn.Linear(encoder_hidden_dims[l], encoder_hidden_dims[l+1]),
+                                        nn.ELU()))
+        self.encoder = nn.Sequential(*encoder_layers)
+
+        self.fc_mu = nn.Linear(encoder_hidden_dims[-1], latent_dim)
+        self.fc_var = nn.Linear(encoder_hidden_dims[-1], latent_dim)
+
+        # Build Decoder
+        decoder_layers = []
+        decoder_layers.append(nn.Sequential(nn.Linear(latent_dim, decoder_hidden_dims[0]),
+                                            nn.ELU()))
+        for l in range(len(decoder_hidden_dims)):
+            if l == len(decoder_hidden_dims) - 1:
+                decoder_layers.append(nn.Linear(decoder_hidden_dims[l],output_dim))
+            else:
+                decoder_layers.append(nn.Sequential(nn.Linear(decoder_hidden_dims[l], decoder_hidden_dims[l+1]),
+
+                                        nn.ELU()))
+
+        self.decoder = nn.Sequential(*decoder_layers)
+
+        self.kl_weight = beta
+
+    def encode(self, input):
+        result = self.encoder(input)
+        mu = self.fc_mu(result)
+        log_var = self.fc_var(result)
+
+        return [mu,log_var]
     
+    def get_latent(self,input):
+        mu,log_var = self.encode(input)
+        return mu
+
+    def decode(self,z):
+        result = self.decoder(z)
+        return result
+
+    def reparameterize(self, mu, logvar):
+       
+        std = torch.exp(0.5 * logvar)
+        eps = torch.randn_like(std)
+        return eps * std + mu
+
+    def forward(self, input):
+        
+        mu,log_var = self.encode(input)
+        z = self.reparameterize(mu, log_var)
+        return  [self.decode(z),z, mu, log_var]
+    
+    def loss_fn(self,y, y_hat, mean, logvar):
+
+        recons_loss = F.mse_loss(y_hat,y)
+        kl_loss = torch.mean(-0.5 * torch.sum(1 + logvar - mean.pow(2) - logvar.exp(), -1))
+        loss = recons_loss + self.beta * kl_loss
+
+        return loss
+      
 class RnnStateHistoryEncoder(nn.Module):
     def __init__(self,activation_fn, input_size,mlp_output_size, encoder_dims,hidden_size):
         super(RnnStateHistoryEncoder,self).__init__()

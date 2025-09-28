@@ -165,6 +165,13 @@ class ActorCriticTar(ActorCriticMlpSlrDblEnc):
         actor_obs = torch.cat([z.detach(), prop, vel.detach()], dim=-1)
         actions_mean = self.actor(actor_obs)
         return actions_mean
+    
+    def get_latents(self,observations):
+        obs_tuple = self.extract(observations)
+        prop = obs_tuple[1]
+        z, vel = self.encode(obs_tuple)
+        return z,vel
+
 
     def evaluate(self, critic_observations, **kwargs):
         obs_tuple = self.extract_critic(critic_observations)

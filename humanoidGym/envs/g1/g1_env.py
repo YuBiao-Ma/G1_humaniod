@@ -107,6 +107,7 @@ class G1Robot(LeggedRobot):
         # add randomization related 
         self.init_randomize_props()
         self.init_randomize_lag()
+       
         
         self._get_env_origins()
         env_lower = gymapi.Vec3(0., 0., 0.)
@@ -250,6 +251,7 @@ class G1Robot(LeggedRobot):
         self._init_foot()
         self._init_mirror()
         self._init_action_scales()
+        self._resample_commands(torch.arange(self.num_envs))
 
     def update_feet_state(self):
         self.gym.refresh_rigid_body_state_tensor(self.sim)
@@ -330,9 +332,6 @@ class G1Robot(LeggedRobot):
         self.phase_length_buf += 1
         self.phase = self._get_phase()
         self.compute_ref_state()
-        self.phase_left = self.phase
-        self.phase_right = (self.phase + self.cfg.rewards.offset) % 1
-        self.leg_phase = torch.cat([self.phase_left.unsqueeze(1), self.phase_right.unsqueeze(1)], dim=-1)
         self.stance_mask = self._get_gait_phase()
         self.contact_mask = self.contact_forces[:, self.feet_indices, 2] > 5.
         return super()._post_physics_step_callback()
@@ -392,8 +391,17 @@ class G1Robot(LeggedRobot):
         return phase
 
     def _get_gait_phase(self):
+        # return float mask 1 is stance, 0 is swing
+        #phase = self._get_phase()
+        sin_pos = torch.sin(2 * torch.pi * self.phase)
+        # Add double support phase
         stance_mask = torch.zeros((self.num_envs, 2), device=self.device)
-        stance_mask = self.leg_phase<self.stance_ratio.unsqueeze(1)
+        # left foot stance
+        stance_mask[:, 0] = sin_pos > 0
+        # right foot stance
+        stance_mask[:, 1] = sin_pos < 0
+        
+        stance_mask[torch.abs(sin_pos) < 0.05] = 1
 
         return stance_mask
 
@@ -471,23 +479,25 @@ class G1Robot(LeggedRobot):
                             self.actions
                             ),dim=-1)
         single_privileged_obs = torch.cat((self.base_lin_vel * self.obs_scales.lin_vel,
-                                    self.base_ang_vel  * self.obs_scales.ang_vel,
-                                    self.projected_gravity,
-                                    self.commands[:, :3] * self.commands_scale,
-                                    (self.dof_pos - self.default_dof_pos) * self.obs_scales.dof_pos,
-                                    self.dof_vel * self.obs_scales.dof_vel,
-                                    self.actions,
-                                    sin_pos,
-                                    cos_pos,
-                                    self.friction,
-                                    #self.contact_mask,
-                                    self.stance_mask,
-                                    diff,
-                                    self.rand_push_force[:,:2],
-                                    self.contact_forces[:,self.feet_indices].view(self.num_envs,-1),
-                                    stand_cmd,
-                                    self.contact_mask
-                                    ),dim=-1)
+                                           self.commands[:, :3] * self.commands_scale,
+                                           sin_pos,
+                                            cos_pos,
+                                            stand_cmd,
+                                            self.base_ang_vel  * self.obs_scales.ang_vel,
+                                            self.projected_gravity,
+                                            
+                                            (self.dof_pos - self.default_dof_pos) * self.obs_scales.dof_pos,
+                                            self.dof_vel * self.obs_scales.dof_vel,
+                                            self.actions,
+                                            
+                                            self.friction,
+                                            #self.contact_mask,
+                                            self.stance_mask,
+                                            diff,
+                                            self.rand_push_force[:,:2],
+                                            self.contact_forces[:,self.feet_indices].view(self.num_envs,-1),
+                                            self.contact_mask
+                                            ),dim=-1)
         
         # add noise if needed
         if self.add_noise:
@@ -533,7 +543,7 @@ class G1Robot(LeggedRobot):
         # diff[:,[4,10]] = diff[:,[4,10]] * 2.0
         r = torch.exp(-2 * torch.norm(diff, dim=1)) - 0.2 * torch.norm(diff, dim=1).clamp(0, 0.5)
         # r[stand_command] = 1.0
-        return r
+        return r * torch.clamp(-self.projected_gravity[:,2],0,1)
     
     def _reward_ankle_joint_pos(self):
         """
@@ -548,7 +558,7 @@ class G1Robot(LeggedRobot):
         diff = ankle_pos - knee_pos
         r = torch.exp(-2 * torch.norm(diff,dim=1)) 
         
-        return r
+        return r * torch.clamp(-self.projected_gravity[:,2],0,1)
         
 
     def _reward_feet_distance(self):
@@ -561,7 +571,7 @@ class G1Robot(LeggedRobot):
         max_df = self.cfg.rewards.max_dist
         d_min = torch.clamp(foot_dist - fd, -0.5, 0.)
         d_max = torch.clamp(foot_dist - max_df, 0, 0.5)
-        return (torch.exp(-torch.abs(d_min) * 100) + torch.exp(-torch.abs(d_max) * 100)) / 2
+        return (torch.exp(-torch.abs(d_min) * 100) + torch.exp(-torch.abs(d_max) * 100)) / 2 * torch.clamp(-self.projected_gravity[:,2],0,1)
 
 
     def _reward_knee_distance(self):
@@ -574,7 +584,7 @@ class G1Robot(LeggedRobot):
         max_df = self.cfg.rewards.max_dist / 2
         d_min = torch.clamp(foot_dist - fd, -0.5, 0.)
         d_max = torch.clamp(foot_dist - max_df, 0, 0.5)
-        return (torch.exp(-torch.abs(d_min) * 100) + torch.exp(-torch.abs(d_max) * 100)) / 2
+        return (torch.exp(-torch.abs(d_min) * 100) + torch.exp(-torch.abs(d_max) * 100)) / 2 * torch.clamp(-self.projected_gravity[:,2],0,1)
 
 
     def _reward_foot_slip(self):
@@ -587,7 +597,7 @@ class G1Robot(LeggedRobot):
         foot_speed_norm = torch.norm(self.rigid_state[:, self.feet_indices, 10:12], dim=2)
         rew = torch.sqrt(foot_speed_norm)
         rew *= contact
-        return torch.sum(rew, dim=1)    
+        return torch.sum(rew, dim=1) * torch.clamp(-self.projected_gravity[:,2],0,1)   
 
     def _reward_feet_air_time(self):
         """
@@ -603,7 +613,7 @@ class G1Robot(LeggedRobot):
         self.feet_air_time += self.dt
         air_time = self.feet_air_time.clamp(0, 0.5) * first_contact
         self.feet_air_time *= ~self.contact_filt
-        return air_time.sum(dim=1)
+        return air_time.sum(dim=1) * torch.clamp(-self.projected_gravity[:,2],0,1)
 
     def _reward_feet_contact_number(self):
         """
@@ -614,7 +624,7 @@ class G1Robot(LeggedRobot):
         stance_mask = self._get_gait_phase().clone()
         # stance_mask[torch.norm(self.commands[:, :3], dim=1) <= self.cfg.commands.stand_com_threshold] = 1
         reward = torch.where(contact == stance_mask, 1, -0.3)
-        return torch.mean(reward, dim=1)
+        return torch.mean(reward, dim=1) * torch.clamp(-self.projected_gravity[:,2],0,1)
     
     def _reward_no_fly(self):
         contact = self.contact_forces[:, self.feet_indices, 2] > 2.
@@ -622,7 +632,7 @@ class G1Robot(LeggedRobot):
         fly_mask = torch.zeros_like(contact_average)
         reward = torch.where(contact_average != fly_mask, 1.0, -1.0)
 
-        return reward
+        return reward * torch.clamp(-self.projected_gravity[:,2],0,1)
     
     def _reward_idol_feet_contact(self):
         contact = self.contact_forces[:, self.feet_indices, 2] > 2.
@@ -632,7 +642,7 @@ class G1Robot(LeggedRobot):
         stand_command = (torch.norm(self.commands[:, :3], dim=1) <= self.cfg.commands.stand_com_threshold)
         reward = torch.where(stand_command, reward.clone(),
                          torch.zeros_like(reward))
-        return reward
+        return reward * torch.clamp(-self.projected_gravity[:,2],0,1)
     
     def _reward_idol_base_height(self):
         """
@@ -648,7 +658,7 @@ class G1Robot(LeggedRobot):
         stand_command = (torch.norm(self.commands[:, :3], dim=1) <= self.cfg.commands.stand_com_threshold)
         reward = torch.where(stand_command, reward.clone(),
                          torch.zeros_like(reward))
-        return reward
+        return reward * torch.clamp(-self.projected_gravity[:,2],0,1)
         
     def _reward_orientation(self):
         """
@@ -657,14 +667,14 @@ class G1Robot(LeggedRobot):
         """
         quat_mismatch = torch.exp(-torch.sum(torch.abs(self.rpy[:, :2]), dim=1) * 10)
         orientation = torch.exp(-torch.norm(self.projected_gravity[:, :2], dim=1) * 20)
-        return (quat_mismatch + orientation) / 2.
+        return (quat_mismatch + orientation) / 2. * torch.clamp(-self.projected_gravity[:,2],0,1)
 
     def _reward_feet_contact_forces(self):
         """
         Calculates the reward for keeping contact forces within a specified range. Penalizes
         high contact forces on the feet.
         """
-        return torch.sum((torch.norm(self.contact_forces[:, self.feet_indices, :], dim=-1) - self.cfg.rewards.max_contact_force).clip(0, 350), dim=1)
+        return torch.sum((torch.norm(self.contact_forces[:, self.feet_indices, :], dim=-1) - self.cfg.rewards.max_contact_force).clip(0, 350), dim=1) * torch.clamp(-self.projected_gravity[:,2],0,1)
         # move_command = (torch.norm(self.commands[:, :3], dim=1) > self.cfg.commands.stand_com_threshold)
         # r = torch.sum((torch.norm(self.contact_forces[:, self.feet_indices, :], dim=-1) - self.cfg.rewards.max_contact_force).clip(0, 350), dim=1)
         # r = torch.where(move_command, r.clone(),
@@ -682,28 +692,28 @@ class G1Robot(LeggedRobot):
         right_yaw_roll = joint_diff[:, [7,8,11]]
         yaw_roll = torch.norm(left_yaw_roll, dim=1) + torch.norm(right_yaw_roll, dim=1)
         yaw_roll = torch.clamp(yaw_roll - 0.1, 0, 50)
-        return torch.exp(-yaw_roll * 100) - 0.01 * torch.norm(joint_diff, dim=1)
+        return torch.exp(-yaw_roll * 100) - 0.01 * torch.norm(joint_diff, dim=1) * torch.clamp(-self.projected_gravity[:,2],0,1)
     
     def _reward_default_joint_yaw(self):
         joint_diff = self.dof_pos - self.default_dof_pos
         yaw = joint_diff[:, [2,8]]
         yaw = torch.norm(yaw, dim=1)
         yaw = torch.clamp(yaw - 0.1, 0, 50)
-        return torch.exp(-yaw * 100)
+        return torch.exp(-yaw * 100) * torch.clamp(-self.projected_gravity[:,2],0,1)
     
     def _reward_default_joint_roll(self):
         joint_diff = self.dof_pos - self.default_dof_pos
-        yaw = joint_diff[:, [2,8]]
+        yaw = joint_diff[:, [1,7]]
         yaw = torch.norm(yaw, dim=1)
         yaw = torch.clamp(yaw - 0.1, 0, 50)
-        return torch.exp(-yaw * 100)
+        return torch.exp(-yaw * 100) * torch.clamp(-self.projected_gravity[:,2],0,1)
 
     def _reward_default_joint_ankle_roll(self):
         joint_diff = self.dof_pos - self.default_dof_pos
         yaw = joint_diff[:, [5,11]]
         yaw = torch.norm(yaw, dim=1)
         yaw = torch.clamp(yaw - 0.1, 0, 50)
-        return torch.exp(-yaw * 100)
+        return torch.exp(-yaw * 100) * torch.clamp(-self.projected_gravity[:,2],0,1)
     
     def _reward_base_height(self):
         """
@@ -715,7 +725,7 @@ class G1Robot(LeggedRobot):
         measured_heights = torch.sum(
             self.rigid_state[:, self.feet_indices, 2] * stance_mask, dim=1) / torch.sum(stance_mask, dim=1)
         base_height = self.root_states[:, 2] - (measured_heights - 0.05)
-        return torch.exp(-torch.abs(base_height - self.cfg.rewards.base_height_target) * 100)
+        return torch.exp(-torch.abs(base_height - self.cfg.rewards.base_height_target) * 100) * torch.clamp(-self.projected_gravity[:,2],0,1)
 
     def _reward_base_acc(self):
         """
@@ -724,7 +734,7 @@ class G1Robot(LeggedRobot):
         """
         root_acc = self.last_root_vel - self.root_states[:, 7:13]
         rew = torch.exp(-torch.norm(root_acc, dim=1) * 3)
-        return rew
+        return rew * torch.clamp(-self.projected_gravity[:,2],0,1)
 
 
     def _reward_vel_mismatch_exp(self):
@@ -737,7 +747,7 @@ class G1Robot(LeggedRobot):
 
         c_update = (lin_mismatch + ang_mismatch) / 2.
 
-        return c_update
+        return c_update * torch.clamp(-self.projected_gravity[:,2],0,1)
 
     def _reward_track_vel_hard(self):
         """
@@ -756,7 +766,7 @@ class G1Robot(LeggedRobot):
 
         linear_error = 0.2 * (lin_vel_error + ang_vel_error)
 
-        return (lin_vel_error_exp + ang_vel_error_exp) / 2. - linear_error
+        return ((lin_vel_error_exp + ang_vel_error_exp) / 2. - linear_error) * torch.clamp(-self.projected_gravity[:,2],0,1)
 
     def _reward_tracking_lin_vel(self):
         """
@@ -765,7 +775,7 @@ class G1Robot(LeggedRobot):
         """
         lin_vel_error = torch.sum(torch.square(
             self.commands[:, :2] - self.base_lin_vel[:, :2]), dim=1)
-        return torch.exp(-lin_vel_error * self.cfg.rewards.tracking_sigma)
+        return torch.exp(-lin_vel_error * self.cfg.rewards.tracking_sigma) * torch.clamp(-self.projected_gravity[:,2],0,1)
 
     def _reward_tracking_ang_vel(self):
         """
@@ -775,7 +785,7 @@ class G1Robot(LeggedRobot):
         
         ang_vel_error = torch.square(
             self.commands[:, 2] - self.base_ang_vel[:, 2])
-        return torch.exp(-ang_vel_error * self.cfg.rewards.tracking_sigma)
+        return torch.exp(-ang_vel_error * self.cfg.rewards.tracking_sigma) * torch.clamp(-self.projected_gravity[:,2],0,1)
     
     # def _reward_tracking_lin_vel(self):
     #     """
@@ -825,13 +835,13 @@ class G1Robot(LeggedRobot):
         # self.last_feet_z = feet_z
 
         # Compute swing mask
-        swing_mask = (self.leg_phase > self.stance_ratio.unsqueeze(1)*1.1) & (self.leg_phase<0.95)
+        swing_mask = 1 - self._get_gait_phase()
 
         # feet height should larger than target feet height at the peak
         rew_pos = (self.feet_height > self.cfg.rewards.target_feet_height)
         rew_pos = torch.sum(rew_pos * swing_mask, dim=1)
         self.feet_height *= ~contact
-        return rew_pos
+        return rew_pos * torch.clamp(-self.projected_gravity[:,2],0,1)
 
     def _reward_low_speed(self):
         """
@@ -857,42 +867,42 @@ class G1Robot(LeggedRobot):
 
         # Assign rewards based on conditions
         # Speed too low
-        reward[speed_too_low] = -1.0
+        reward[speed_too_low] = -10
         # Speed too high
         reward[speed_too_high] = 0.0
         # Speed within desired range
         reward[speed_desired] = 2.0
         # Sign mismatch has the highest priority
         reward[sign_mismatch] = -2.0
-        return reward * (self.commands[:, 0].abs() > 0.05)
+        return reward * (self.commands[:, 0].abs() > 0.05) * torch.clamp(-self.projected_gravity[:,2],0,1)
     
     def _reward_torques(self):
         """
         Penalizes the use of high torques in the robot's joints. Encourages efficient movement by minimizing
         the necessary force exerted by the motors.
         """
-        return torch.sum(torch.square(self.torques), dim=1)
+        return torch.sum(torch.square(self.torques), dim=1) 
 
     def _reward_dof_vel(self):
         """
         Penalizes high velocities at the degrees of freedom (DOF) of the robot. This encourages smoother and 
         more controlled movements.
         """
-        return torch.sum(torch.square(self.dof_vel), dim=1)
+        return torch.sum(torch.square(self.dof_vel), dim=1) * torch.clamp(-self.projected_gravity[:,2],0,1)
     
     def _reward_dof_acc(self):
         """
         Penalizes high accelerations at the robot's degrees of freedom (DOF). This is important for ensuring
         smooth and stable motion, reducing wear on the robot's mechanical parts.
         """
-        return torch.sum(torch.square((self.last_dof_vel - self.dof_vel) / self.dt), dim=1)
+        return torch.sum(torch.square((self.last_dof_vel - self.dof_vel) / self.dt), dim=1) * torch.clamp(-self.projected_gravity[:,2],0,1)
     
     def _reward_collision(self):
         """
         Penalizes collisions of the robot with the environment, specifically focusing on selected body parts.
         This encourages the robot to avoid undesired contact with objects or surfaces.
         """
-        return torch.sum(1.*(torch.norm(self.contact_forces[:, self.penalised_contact_indices, :], dim=-1) > 0.1), dim=1)
+        return torch.sum(1.*(torch.norm(self.contact_forces[:, self.penalised_contact_indices, :], dim=-1) > 0.1), dim=1) * torch.clamp(-self.projected_gravity[:,2],0,1)
 
     def _reward_action_smoothness(self):
         """
@@ -913,7 +923,7 @@ class G1Robot(LeggedRobot):
         term_2 = torch.sum(torch.square(
             self.actions + self.last_last_actions - 2 * self.last_actions)[:,hip_yaw_roll_index], dim=1)
         term_3 = 0.01 * torch.sum(torch.abs(self.actions[:,hip_yaw_roll_index]), dim=1)
-        return 2.0*term_1 + term_2 + term_3
+        return (2.0*term_1 + term_2 + term_3) * torch.clamp(-self.projected_gravity[:,2],0,1)
     
     def _reward_hip_yaw_action_smoothness(self):
         hip_yaw_index = [2,8]
@@ -922,7 +932,7 @@ class G1Robot(LeggedRobot):
         term_2 = torch.sum(torch.square(
             self.actions + self.last_last_actions - 2 * self.last_actions)[:,hip_yaw_index], dim=1)
         term_3 = 0.01 * torch.sum(torch.abs(self.actions[:,hip_yaw_index]), dim=1)
-        return 2.0*term_1 + term_2 + term_3
+        return (2.0*term_1 + term_2 + term_3) * torch.clamp(-self.projected_gravity[:,2],0,1)
     
     def _reward_hip_roll_action_smoothness(self):
         hip_roll_index = [1,7]
@@ -931,7 +941,7 @@ class G1Robot(LeggedRobot):
         term_2 = torch.sum(torch.square(
             self.actions + self.last_last_actions - 2 * self.last_actions)[:,hip_roll_index], dim=1)
         term_3 = 0.01 * torch.sum(torch.abs(self.actions[:,hip_roll_index]), dim=1)
-        return 2.0*term_1 + term_2 + term_3
+        return (2.0*term_1 + term_2 + term_3) * torch.clamp(-self.projected_gravity[:,2],0,1)
     
     def _reward_ankle_pitch_action_smoothness(self):
         ankle_pitch_index = [4,10]
@@ -940,7 +950,7 @@ class G1Robot(LeggedRobot):
         term_2 = torch.sum(torch.square(
             self.actions + self.last_last_actions - 2 * self.last_actions)[:,ankle_pitch_index], dim=1)
         term_3 = 0.01 * torch.sum(torch.abs(self.actions[:,ankle_pitch_index]), dim=1)
-        return 2.0*term_1 + term_2 + term_3
+        return (2.0*term_1 + term_2 + term_3) * torch.clamp(-self.projected_gravity[:,2],0,1)
     
     def _reward_ankle_roll_action_smoothness(self):
         ankle_roll_index = [5,11]
@@ -949,7 +959,7 @@ class G1Robot(LeggedRobot):
         term_2 = torch.sum(torch.square(
             self.actions + self.last_last_actions - 2 * self.last_actions)[:,ankle_roll_index], dim=1)
         term_3 = 0.01 * torch.sum(torch.abs(self.actions[:,ankle_roll_index]), dim=1)
-        return 2.0*term_1 + term_2 + term_3
+        return (2.0*term_1 + term_2 + term_3) * torch.clamp(-self.projected_gravity[:,2],0,1)
     
     def _reward_termination(self):
         # Terminal reward / penalty
@@ -961,7 +971,7 @@ class G1Robot(LeggedRobot):
         r = torch.exp(-torch.sum(torch.square(self.dof_pos - self.target_dof_pos), dim=1))
         r = torch.where(stand_command, r.clone(),
                         torch.zeros_like(r))
-        return r
+        return r * torch.clamp(-self.projected_gravity[:,2],0,1)
     
     def _reward_stand_still_pen(self):
         # penalize motion at zero commands
@@ -1018,7 +1028,7 @@ class G1Robot(LeggedRobot):
         r = torch.sum(torch.abs(self.torques*self.dof_vel),dim=1)
         r = torch.where(stand_command, r.clone(),
                         torch.zeros_like(r))
-        return r
+        return r * torch.clamp(-self.projected_gravity[:,2],0,1)
     
     def _reward_simple_feet_min_distance(self):
         # get local frame feet pos
@@ -1028,7 +1038,7 @@ class G1Robot(LeggedRobot):
             footpos_in_body_frame[:, i, :] = quat_rotate_inverse(self.base_quat, cur_footpos_translated[:, i, :])
         # compute y distance
         y_dist = torch.abs(footpos_in_body_frame[:,0,1] - footpos_in_body_frame[:,1,1]) - 0.18
-        return torch.clamp(y_dist,max=0.0)
+        return torch.clamp(y_dist,max=0.0) * torch.clamp(-self.projected_gravity[:,2],0,1)
     
     def _reward_simple_knee_min_distance(self):
         cur_kneepos_translated = self.knee_pos - self.root_states[:, 0:3].unsqueeze(1)
@@ -1037,7 +1047,7 @@ class G1Robot(LeggedRobot):
             kneepos_in_body_frame[:, i, :] = quat_rotate_inverse(self.base_quat, cur_kneepos_translated[:, i, :])
         # compute y distance
         y_dist = torch.abs(kneepos_in_body_frame[:,0,1] - kneepos_in_body_frame[:,1,1]) - 0.18
-        return torch.clamp(y_dist,max=0.0)
+        return torch.clamp(y_dist,max=0.0) * torch.clamp(-self.projected_gravity[:,2],0,1)
     
     def _reward_feet_rotation(self):
         feet_quat = self.feet_state[:,:,3:7]
@@ -1045,7 +1055,7 @@ class G1Robot(LeggedRobot):
         rotation = torch.sum(torch.square(feet_euler_xyz[:,:,:2]),dim=[1,2])
         # rotation = torch.sum(torch.square(feet_euler_xyz[:,:,1]),dim=1)
         r = torch.exp(-rotation*15)
-        return r
+        return r * torch.clamp(-self.projected_gravity[:,2],0,1)
     
     def _reward_exp_action_smooothness(self):
         # 动作越发顺滑越好
@@ -1054,12 +1064,12 @@ class G1Robot(LeggedRobot):
         term_2 = torch.sum(torch.square(
             self.actions + self.last_last_actions - 2 * self.last_actions), dim=1)
         term_3 = 0.05 * torch.sum(torch.abs(self.actions), dim=1)
-        return torch.exp(-1e-2*(term_1 + term_2 + term_3))
+        return torch.exp(-1e-2*(term_1 + term_2 + term_3)) * torch.clamp(-self.projected_gravity[:,2],0,1)
     
     def _reward_stumble(self):
         # Penalize feet hitting vertical surfaces
         return torch.any(torch.norm(self.contact_forces[:, self.feet_indices, :2], dim=2) >\
-             5 *torch.abs(self.contact_forces[:, self.feet_indices, 2]), dim=1)
+             5 *torch.abs(self.contact_forces[:, self.feet_indices, 2]), dim=1) * torch.clamp(-self.projected_gravity[:,2],0,1)
         
     def _reward_power_dist(self):
         # Penalize power dist
@@ -1069,26 +1079,26 @@ class G1Robot(LeggedRobot):
         return torch.sum(torch.abs(self.torques*self.dof_vel),dim=1)
     
     def _reward_exp_energy(self):
-        return torch.exp(-1e-6*torch.sum(torch.square(self.dof_vel * self.torques),dim=1))
+        return torch.exp(-1e-6*torch.sum(torch.square(self.dof_vel * self.torques),dim=1)) * torch.clamp(-self.projected_gravity[:,2],0,1)
     
     def _reward_ankle_roll_energy(self):
         energy = torch.sum(torch.square(self.dof_vel[:,[5,11]] * self.torques[:,[5,11]]),dim=1)
-        return torch.exp(-(1e-6*energy))
+        return torch.exp(-(1e-6*energy)) * torch.clamp(-self.projected_gravity[:,2],0,1)
     
     def _reward_ankle_pitch_energy(self):
         energy = torch.sum(torch.square(self.dof_vel[:,[4,10]] * self.torques[:,[4,10]]),dim=1)
-        return torch.exp(-(1e-6*energy))
+        return torch.exp(-(1e-6*energy)) * torch.clamp(-self.projected_gravity[:,2],0,1)
     
     def _reward_ankle_energy(self):
-        energy = torch.sum(torch.square(self.dof_vel[:,[4,5,10,11]] * self.torques[:,[4,5,10,11]]),dim=1)
-        return torch.exp(-(1e-6*energy))
+        energy = torch.sum(torch.square(self.dof_vel[:,[4,5,10,11]] * self.torques[:,[4,5,10,11]]),dim=1) 
+        return torch.exp(-(1e-6*energy)) * torch.clamp(-self.projected_gravity[:,2],0,1)
     
     def _reward_hip_roll_yaw_energy(self):
-        energy = torch.sum(torch.square(self.dof_vel[:,[1,2,7,8]] * self.torques[:,[1,2,7,8]]),dim=1)
+        energy = torch.sum(torch.square(self.dof_vel[:,[1,2,7,8]] * self.torques[:,[1,2,7,8]]),dim=1) * torch.clamp(-self.projected_gravity[:,2],0,1)
         return torch.exp(-(1e-6*energy))
     
     def _reward_hip_yaw_energy(self):
-        energy = torch.sum(torch.square(self.dof_vel[:,[2,8]] * self.torques[:,[2,8]]),dim=1)
+        energy = torch.sum(torch.square(self.dof_vel[:,[2,8]] * self.torques[:,[2,8]]),dim=1) * torch.clamp(-self.projected_gravity[:,2],0,1)
         return torch.exp(-(1e-6*energy))
     
     def _reward_foot_normal_reward(self):
@@ -1119,11 +1129,11 @@ class G1Robot(LeggedRobot):
             alignment_reward * 0.5    # 低对齐区域奖励减半
         )
         
-        return alignment_reward
+        return alignment_reward * torch.clamp(-self.projected_gravity[:,2],0,1)
     
     def _reward_action_rate(self):
         # Penalize changes in actions
-        return torch.sum(torch.square(self.last_actions - self.actions), dim=1)
+        return torch.sum(torch.square(self.last_actions - self.actions), dim=1) * torch.clamp(-self.projected_gravity[:,2],0,1)
     
     def _reward_action_smooth(self):
         return torch.sum(
@@ -1133,38 +1143,38 @@ class G1Robot(LeggedRobot):
                 + self.last_last_actions
             ),
             dim=1,
-        )
+        ) * torch.clamp(-self.projected_gravity[:,2],0,1)
     
     def _reward_hip_roll_default(self):
         hip_roll_differ = torch.mean(torch.square(self.dof_pos[:,[1,7]]),dim=-1)
-        return torch.exp(-hip_roll_differ)
+        return torch.exp(-hip_roll_differ) * torch.clamp(-self.projected_gravity[:,2],0,1)
     
     def _reward_hip_roll_energy(self):
         energy = torch.sum(torch.square(self.dof_vel[:,[1,7]] * self.torques[:,[1,7]]),dim=1)
-        return  torch.exp(-(1e-6*energy))
+        return  torch.exp(-(1e-6*energy)) * torch.clamp(-self.projected_gravity[:,2],0,1)
     
     def _reward_hip_pitch_energy(self):
         energy = torch.sum(torch.square(self.dof_vel[:,[0,6]] * self.torques[:,[0,6]]),dim=1)
-        return  torch.exp(-(1e-6*energy))
+        return  torch.exp(-(1e-6*energy)) * torch.clamp(-self.projected_gravity[:,2],0,1)
     
     def _reward_knee_energy(self):
         energy = torch.sum(torch.square(self.dof_vel[:,[3,9]] * self.torques[:,[3,9]]),dim=1)
-        return torch.exp(-(1e-6*energy))
+        return torch.exp(-(1e-6*energy)) * torch.clamp(-self.projected_gravity[:,2],0,1)
     
     def _reward_lin_vel_z(self):
         # Penalize z axis base linear velocity
-        return torch.square(self.base_lin_vel[:, 2])
+        return torch.square(self.base_lin_vel[:, 2]) * torch.clamp(-self.projected_gravity[:,2],0,1)
     
     def _reward_ang_vel_xy(self):
         # Penalize xy axes base angular velocity
-        return torch.sum(torch.square(self.base_ang_vel[:, :2]), dim=1)
+        return torch.sum(torch.square(self.base_ang_vel[:, :2]), dim=1) * torch.clamp(-self.projected_gravity[:,2],0,1)
     
     def _reward_orientation_pen(self):
         # Penalize non flat base orientation
         return torch.sum(torch.square(self.projected_gravity[:, :2]), dim=1)
     
     def _reward_contact_momentum(self):
-        return torch.sum(torch.abs(self.feet_vel[:,:,2]*self.contact_forces[:,self.feet_indices,2]),dim=1)
+        return torch.sum(torch.abs(self.feet_vel[:,:,2]*self.contact_forces[:,self.feet_indices,2]),dim=1) 
     
     # def _reward_feet_mass_scaled_contact_forces(self):
     #     return torch.sum(
@@ -1182,7 +1192,7 @@ class G1Robot(LeggedRobot):
         about_to_land = (~contacts) & (z_vels < 0.0)
         landing_z_vels = torch.where(about_to_land, z_vels, torch.zeros_like(z_vels))
         reward = torch.sum(torch.square(landing_z_vels), dim=1)
-        return reward
+        return reward * torch.clamp(-self.projected_gravity[:,2],0,1)
     
     def _reward_dof_pos_limits(self):
         # Penalize dof positions too close to the limit
@@ -1206,19 +1216,19 @@ class G1Robot(LeggedRobot):
     
     def _reward_hip_roll_yaw_torque_limits(self):
         hip_roll_yaw_torques = self.torques[:,[1,2,7,8]]
-        hip_roll_yaw_torques_limit = 0.5*self.torque_li0mits[[1,2,7,8]]
+        hip_roll_yaw_torques_limit = 0.5*self.torque_limits[[1,2,7,8]]
         return torch.sum((torch.abs(hip_roll_yaw_torques) - hip_roll_yaw_torques_limit).clip(min=0.), dim=1)
     
     def _reward_feet_height_var(self):
         left = torch.var(self.left_feet_heights,dim=-1)
         right = torch.var(self.right_feet_heights,dim=-1)
         reward = torch.exp(-(1e3*(left + right)/2))
-        return reward
+        return reward * torch.clamp(-self.projected_gravity[:,2],0,1)
     
     def _reward_ankle_pitch_limit(self):
         ankle_pitch_index = [4,10]
         picth_limit_pen = torch.sum((self.dof_pos[:,ankle_pitch_index] - 0.2).clip(max=0),dim=-1)
-        return picth_limit_pen
+        return picth_limit_pen 
     
     def _reward_base_height_plus(self):
         """
@@ -1234,4 +1244,18 @@ class G1Robot(LeggedRobot):
         # base_height2 = self.root_states[:, 2] - (measured_heights - 0.05)
         base_height = torch.mean(self.root_states[:, 2].unsqueeze(1) - ground_height, dim=1)
         error = torch.clip(torch.abs(base_height - self.cfg.rewards.base_height_target),0,0.2)
-        return torch.exp(-torch.sqrt(error)*10)-error*5
+        return torch.exp(-torch.sqrt(error)*10)-error*5 * torch.clamp(-self.projected_gravity[:,2],0,1)
+    
+
+    def _reward_yaw_error_when_rate_matches(self):
+        rate_match = torch.abs(self.base_ang_vel[:, 2] - self.commands[:, 2]) < 0.5
+        desired_yaw = self.commands[:, 3]
+        yaw_err = torch.atan2(torch.sin(self.rpy[:, 2] - desired_yaw),
+                            torch.cos(self.rpy[:, 2] - desired_yaw))
+        penalty = torch.zeros_like(yaw_err)
+        penalty = torch.where(rate_match, yaw_err**2, penalty)
+        # print(penalty[0])
+        return penalty * torch.clamp(-self.projected_gravity[:,2],0,1)
+    
+    def _reward_upward(self):
+        return  self.projected_gravity[:,2] + 1

@@ -16,6 +16,10 @@
                 "--headless",
                 // "--experiment_name","miniloong_vq",
                 // "--resume",
+                 "--experiment_name","g1_PPOLSE",
+                //  "--checkpoint=20800",
+                //  "--load_run=Sep23_00-56-26_",
+                //  "--resume"
             ]
         },
         {
@@ -28,10 +32,10 @@
                 "--task", "g1_teacher",
                 "--rl_device=cpu",
                 // "--num_envs", "1",
-                // "--experiment_name","g1_vq",
-                 "--num_envs", "16",
-                 "--checkpoint=20800",
-                 "--load_run=Sep12_12-20-54_"
+                // "--experiment_name","g1_PPOVq",
+                //  "--num_envs", "16",
+                //  "--checkpoint=8000",
+                 "--load_run=Sep23_00-56-26_"
               
             ]
         }

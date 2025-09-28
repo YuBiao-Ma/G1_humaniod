@@ -155,7 +155,7 @@ class LeggedRobot(BaseTask):
         self.reset_buf = torch.any(torch.norm(self.contact_forces[:, self.termination_contact_indices, :], dim=-1) > 1., dim=1)
         self.reset_buf |= torch.logical_or(torch.abs(self.rpy[:,1])>1.0, torch.abs(self.rpy[:,0])>0.8)
         self.time_out_buf = self.episode_length_buf > self.max_episode_length # no terminal reward for time-outs
-        self.reset_buf |= self.time_out_buf
+        self.reset_buf |= self.time_out_buf #self.reset_buf = self.time_out_buf
 
     def reset_idx(self, env_ids):
         """ Reset some environments.
@@ -568,6 +568,7 @@ class LeggedRobot(BaseTask):
         self.projected_gravity = quat_rotate_inverse(self.base_quat, self.gravity_vec)
         self.rand_push_force = torch.zeros((self.num_envs, 3), dtype=torch.float32, device=self.device)
         self.phase_length_buf = torch.zeros(self.num_envs, device=self.device, dtype=torch.long)
+        self.last_yaw = torch.zeros(self.num_envs, device=self.device)
        
         
         if self.cfg.terrain.measure_heights:
@@ -938,7 +939,7 @@ class LeggedRobot(BaseTask):
             self.max_terrain_level = self.cfg.terrain.num_rows
             self.terrain_origins = torch.from_numpy(self.terrain.env_origins).to(self.device).to(torch.float)
             self.env_origins[:] = self.terrain_origins[self.terrain_levels, self.terrain_types]
-            # self.env_origins[:, 2] += 0.5  # add border size to z
+            self.env_origins[:, 2] += 0.0  # add border size to z
         else:
             self.custom_origins = False
             self.env_origins = torch.zeros(self.num_envs, 3, device=self.device, requires_grad=False)

@@ -345,6 +345,7 @@ class LongOriSopUnevenRoughCfgPPO( LeggedRobotCfgPPO ):
         activation = 'elu' # can be elu, relu, selu, crelu, lrelu, tanh, sigmoid
 
     class algorithm( LeggedRobotCfgPPO.algorithm ):
+        class_name = 'PPOVQ'
         entropy_coef = 0.01
         learning_rate = 1e-3
         max_grad_norm = 1
@@ -384,10 +385,11 @@ class LongOriSopUnevenRoughCfgPPO( LeggedRobotCfgPPO ):
             
     class runner( LeggedRobotCfgPPO.runner ):
         empirical_normalization = True
-        policy_class_name = "ActorCritic"
+        policy_class_name = "ActorCriticVq"
+        algorithm_class_name = 'PPOVQ'
         max_iterations = 30000
-        run_name = 'long_reward_barlowtwin_baseline'
-        experiment_name = 'g1'
+        # run_name = 'long_reward_barlowtwin_baseline'
+        experiment_name = 'loong_PPOVQ'
         resume = False
         
         

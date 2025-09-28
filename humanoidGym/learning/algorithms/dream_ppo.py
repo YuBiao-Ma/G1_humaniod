@@ -10,7 +10,7 @@ from ..modules.ac_vq import ActorCriticVq as ActorCritic
 from .ppo import PPO
 
 
-class PPOVQ(PPO):
+class PPODREAM(PPO):
     actor_critic: ActorCritic
 
     def __init__(
@@ -72,14 +72,13 @@ class PPOVQ(PPO):
         assert (
             self.num_envs is not None
         ), "[ERROR]: Number of environments must be provided for negative sample indexing."
-        vel_loss , contact_loss , gravity_loss = self.actor_critic.actor_teacher_backbone.VaeLoss(batch["obs"],batch["critic_obs"])
+        recon_loss , vel_loss  , contact_loss  = self.actor_critic.actor_teacher_backbone.VaeLoss(batch["obs"],batch["critic_obs"])
        
         return {
-            # "vqvae": vqvae_loss * self.aux_loss_coef[0],
+            "recon_loss": recon_loss * self.aux_loss_coef[0],
             "vel_mse": vel_loss * self.aux_loss_coef[-1],
             # "latent_mse": latent_loss * self.aux_loss_coef[-1],
             "contact_mse": contact_loss * self.aux_loss_coef[-1],
-            "gravity_mse": gravity_loss * self.aux_loss_coef[-1],
 
         }
 

@@ -250,6 +250,7 @@ class G1TeacherRobot(LeggedRobot):
         self._init_foot()
         self._init_mirror()
         self._init_action_scales()
+        self._resample_commands(torch.arange(self.num_envs))
 
     def update_feet_state(self):
         self.gym.refresh_rigid_body_state_tensor(self.sim)
@@ -1243,3 +1244,16 @@ class G1TeacherRobot(LeggedRobot):
         base_height = torch.mean(self.root_states[:, 2].unsqueeze(1) - ground_height, dim=1)
         error = torch.clip(torch.abs(base_height - self.cfg.rewards.base_height_target),0,0.2)
         return torch.exp(-torch.sqrt(error)*10)-error*5
+    
+
+    def _reward_yaw_error_when_rate_matches(self):
+        rate_match = torch.abs(self.base_ang_vel[:, 2] - self.commands[:, 2]) < 0.5
+        desired_yaw = self.commands[:, 3]
+        yaw_err = torch.atan2(torch.sin(self.rpy[:, 2] - desired_yaw),
+                            torch.cos(self.rpy[:, 2] - desired_yaw))
+        penalty = torch.zeros_like(yaw_err)
+        penalty = torch.where(rate_match, yaw_err**2, penalty)
+        # print(penalty[0])
+        return penalty
+    
+ 

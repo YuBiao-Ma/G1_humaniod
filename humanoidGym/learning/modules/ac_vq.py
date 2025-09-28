@@ -45,7 +45,7 @@ class MlpVqvaeLongEstLayerNormFallPredictRegressionActor(nn.Module):
         self.num_prop = num_prop
         self.num_hist = num_hist
         
-        self.actor = nn.Sequential(nn.Linear(latent_dim + (num_prop-9) + 4 + 4 + 32 + 3,512),
+        self.actor = nn.Sequential(nn.Linear(latent_dim + (num_prop-9) + 4 + 4 + 32-16 + 3,512),
                                    nn.ELU(),
                                    nn.Linear(512,256),
                                    nn.ELU(),
@@ -54,7 +54,7 @@ class MlpVqvaeLongEstLayerNormFallPredictRegressionActor(nn.Module):
                                    nn.ELU(),
                                    nn.Linear(128,num_actions))
        
-        self.Vae = PureVqvaeEMA(in_dim=num_prop-9,output_dim=num_prop-9,num_emb=128)
+        self.Vae = PureVqvaeEMA(in_dim=(num_prop-9)*50,output_dim=num_prop-9,num_emb=128)
         
         self.long_encoder = StateHistoryEncoder(input_size=num_prop-9,
                                              tsteps = num_hist-1,
@@ -108,19 +108,22 @@ class MlpVqvaeLongEstLayerNormFallPredictRegressionActor(nn.Module):
     def forward(self,obs_hist_flatten):
         obs_hist = self.reshape(obs_hist_flatten)
         b,_,_ = obs_hist.size()
+        # vae_input = obs_hist[:,:-1,9:].reshape(b,-1)
+        
         
         short_hist_flatten = obs_hist[:,-5:,9:].reshape(b,-1)
         short_encode = self.short_encoder(short_hist_flatten)
         long_encode = self.long_encoder(obs_hist[:,1:,9:]) #remove linvel and command
         
         with torch.no_grad():
+            # recon,quantize,z,onehot_encode = self.Vae(vae_input)
             encode = torch.cat([self.estimator_backbone(short_hist_flatten),long_encode],dim=-1)
-            latents = self.predict_latent_layer(encode)
+            # latents = self.predict_latent_layer(encode)
             predicted_vel = self.predict_vel_layer(encode)
             predicted_contact = self.predict_contact_layer(encode)
             predicted_grad_vec = self.predict_gravity_vec_layer(encode)
             
-        actor_input = torch.cat([short_encode,long_encode,latents.detach(),predicted_vel.detach(),predicted_contact.detach(),predicted_grad_vec.detach(),obs_hist[:,-1,9:],obs_hist[:,-1,3:6]],dim=-1) # remove linvel
+        actor_input = torch.cat([short_encode,long_encode,predicted_vel.detach(),predicted_contact.detach(),predicted_grad_vec.detach(),obs_hist[:,-1,9:],obs_hist[:,-1,3:6]],dim=-1) # remove linvel
         mean  = self.actor(actor_input)
     
         return mean
@@ -132,28 +135,28 @@ class MlpVqvaeLongEstLayerNormFallPredictRegressionActor(nn.Module):
         b,l,_ = obs_hist.size()
         
         # VAE update
-        vae_input = obs_hist[:,:,9:].reshape(b*l,-1)
-        recon,quantize,z,onehot_encode = self.Vae(vae_input)
-        loss = self.Vae.loss_fn(vae_input,recon,quantize,z,onehot_encode)
+        # vae_input = obs_hist[:,:-1,9:].reshape(b,-1)
+        # recon_target = obs_hist[:,-1,9:]
+        # recon,quantize,z,onehot_encode = self.Vae(vae_input)
+        # loss = self.Vae.loss_fn(recon_target,recon,quantize,z,onehot_encode)
         
         # regression
         with torch.no_grad():
-            _,_,future_latent,_ = self.Vae(obs_hist[:,-1,9:])
+         
             long_encode = self.long_encoder(obs_hist[:,:-1,9:])
         
         encode = torch.cat([self.estimator_backbone(obs_hist[:,-6:-1,9:].reshape(b,-1)),long_encode],dim=-1)
-        predict_latent = self.predict_latent_layer(encode)
+ 
         predict_vel = self.predict_vel_layer(encode)
         predict_contact = self.predict_contact_layer(encode)
         predict_gra_vec = self.predict_gravity_vec_layer(encode)
         
-        latent_loss = F.mse_loss(predict_latent,future_latent)
         mseloss = F.mse_loss(predict_vel,obs_hist[:,-2,:3].detach())
         contact_loss = F.mse_loss(predict_contact,critic_hist[:,-2,-2:].detach())
         gravity_loss = F.mse_loss(predict_gra_vec,critic_hist[:,-1,6:9].detach())
 
       
-        return   loss , mseloss , latent_loss , contact_loss , gravity_loss
+        return     mseloss  , contact_loss , gravity_loss
     
 
 class MlpVqvaeSoftmaxLongEstLayerNormFallPredictRegressionTeacherVQSoftmaxActor(nn.Module):
@@ -246,12 +249,12 @@ class MlpVqvaeSoftmaxLongEstLayerNormFallPredictRegressionTeacherVQSoftmaxActor(
             encode = torch.cat([self.estimator_backbone(short_hist_flatten),long_encode],dim=-1)
             latents = self.predict_latent_layer(encode)
             # pred_class = torch.argmax(self.predict_layer(latents), dim=-1) 
-            # # print(f'地形类别：{pred_class}')
+            # print(f'地形类别：{pred_class}')
             predicted_vel = self.predict_vel_layer(encode)
             predicted_contact = self.predict_contact_layer(encode)
             predicted_grad_vec = self.predict_gravity_vec_layer(encode)
 
-        actor_input = torch.cat([short_encode,long_encode,predicted_vel.detach(),predicted_contact.detach(),predicted_grad_vec.detach(),obs_hist[:,-1,9:],obs_hist[:,-1,3:6],torch.zeros_like(latents).detach()],dim=-1) # remove linvel
+        actor_input = torch.cat([short_encode,long_encode,predicted_vel.detach(),predicted_contact.detach(),predicted_grad_vec.detach(),obs_hist[:,-1,9:],obs_hist[:,-1,3:6],(latents).detach()],dim=-1) # remove linvel
         mean  = self.actor(actor_input)
     
         return mean
@@ -268,8 +271,8 @@ class MlpVqvaeSoftmaxLongEstLayerNormFallPredictRegressionTeacherVQSoftmaxActor(
         with torch.no_grad():
             encode = torch.cat([self.estimator_backbone(short_hist_flatten),long_encode],dim=-1)
             latents = self.predict_latent_layer(encode)
-            pred_class = torch.argmax(self.predict_layer(latents), dim=-1) 
-            # print(f'地形类别：{pred_class[0]}')
+            pred_class = torch.argmax(self.predict_layer((latents)), dim=-1) 
+            print(f'地形类别：{pred_class[0]}')
        
     
         return latents, pred_class

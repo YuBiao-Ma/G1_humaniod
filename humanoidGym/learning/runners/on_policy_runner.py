@@ -350,7 +350,7 @@ class OnPolicyRunner:
             saved_dict["critic_obs_norm_state_dict"] = self.critic_obs_normalizer.state_dict()
         torch.save(saved_dict, path)
 
-    def load(self, path: str, load_optimizer: bool = True):
+    def load(self, path: str, load_optimizer: bool = False):
         loaded_dict = torch.load(path, weights_only=False)
         # -- Load PPO model
         self.alg.actor_critic.load_state_dict(loaded_dict["model_state_dict"])

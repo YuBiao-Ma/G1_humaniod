@@ -1,7 +1,8 @@
 import sys
 from humanoidGym import GYM_ROOT_DIR
 import os
-
+import cv2
+from isaacgym import gymapi
 import isaacgym
 from humanoidGym.envs import *
 from humanoidGym.utils import get_args, export_policy_as_jit, task_registry, Logger
@@ -15,7 +16,7 @@ import pandas as pd
 def play(args):
     env_cfg, train_cfg = task_registry.get_cfgs(name=args.task)
     # override some parameters for testing
-    env_cfg.env.num_envs = min(env_cfg.env.num_envs, 10)
+    env_cfg.env.num_envs = min(env_cfg.env.num_envs, 3)
     env_cfg.terrain.num_rows = 6
     env_cfg.terrain.num_cols = 1
     # env_cfg.terrain.mesh_type = 'plane'
@@ -28,17 +29,17 @@ def play(args):
     env_cfg.domain_rand.randomize_motor_strength = False
     env_cfg.domain_rand.randomize_com = False
     env_cfg.domain_rand.randomize_gains = False
-    env_cfg.domain_rand.add_action_lag = True
+    env_cfg.domain_rand.add_action_lag = False
     env_cfg.domain_rand.randomize_rfi = False
     env_cfg.domain_rand.randomize_restitution = False
     env_cfg.domain_rand.randomize_init_joint_offset = False
     env_cfg.domain_rand.randomize_init_joint_scale = False
     env_cfg.domain_rand.randomize_inertia = False
 
-    env_cfg.env.episode_length_s = 200
+    env_cfg.env.episode_length_s = 20
 
     env_cfg.env.test = True
-    env_cfg.commands.ranges.lin_vel_x = [0.5, 0.5]
+    env_cfg.commands.ranges.lin_vel_x = [0.6, 0.6]
     env_cfg.commands.ranges.lin_vel_y = [0, 0]
     env_cfg.commands.ranges.heading = [0, 0]
 
@@ -65,6 +66,8 @@ def play(args):
     SAVE_PREFIX = "pyramid_sloped_terrain"
     SAVE_CSV = True
 
+
+
     joint_order = list(env_cfg.init_state.default_joint_angles.keys())
     left_joints = [
         "joint_left_hip_pitch",
@@ -85,7 +88,31 @@ def play(args):
     name_to_idx = {name: i for i, name in enumerate(joint_order)}
 
     buf = []
-    total_steps = 1* int(env.max_episode_length)
+    total_steps = 10* int(env.max_episode_length)
+
+    # set rgba camera sensor for debug and doudle check
+    camera_local_transform = gymapi.Transform()
+    camera_local_transform.p = gymapi.Vec3(-0.3, -3, 0.5)
+    # camera_local_transform.r = gymapi.Quat.from_axis_angle(gymapi.Vec3(0,0,1), np.deg2rad(90))
+    camera_local_transform.r = gymapi.Quat.from_euler_zyx(
+        0.0,   # yaw  (绕 z)
+        np.deg2rad(-20),   # pitch(绕 y，负值=向下俯)
+        np.deg2rad(90),              # roll (绕 x)
+    ) 
+    camera_props = gymapi.CameraProperties()
+    camera_props.width = 1980
+    camera_props.height = 1980
+
+    cam_handle = env.gym.create_camera_sensor(env.envs[0], camera_props)
+    body_handle = env.gym.get_actor_rigid_body_handle(env.envs[0], env.actor_handles[0], 0)
+    env.gym.attach_camera_to_body(cam_handle, env.envs[0], body_handle, camera_local_transform, gymapi.FOLLOW_TRANSFORM)
+
+    img_idx = 0
+
+    video_duration = 60
+    num_frames = int(video_duration / env.dt)
+    print(f'gathering {num_frames} frames')
+    video = None
 
     # ====== 用于收集 latent ======
     latents_list = []
@@ -93,6 +120,7 @@ def play(args):
 
     for i in range(total_steps):
         actions = policy(obs.detach().to("cpu"))
+     
 
         if GET_LATENT:
             latents, pred_class = get_latent(obs.detach().to("cpu"))
@@ -102,6 +130,8 @@ def play(args):
             pred_list.append(pred_np)
 
         obs, rews, dones, infos = env.step(actions.detach())
+        env.gym.step_graphics(env.sim) # required to render in headless mode
+        env.gym.render_all_camera_sensors(env.sim)
 
         # 读取期望关节位置
         tdp = env.target_dof_pos
@@ -132,6 +162,12 @@ def play(args):
             fig.tight_layout(rect=[0, 0, 1, 0.97])
             plt.show()
 
+        if RECORD_FRAMES:
+            img = env.gym.get_camera_image(env.sim, env.envs[0], cam_handle, gymapi.IMAGE_COLOR).reshape((1980,1980,4))[:,:,:3]
+            if video is None:
+                video = cv2.VideoWriter('record.mp4', cv2.VideoWriter_fourcc(*'mp4v'), int(1 / env.dt), (img.shape[1],img.shape[0]))
+            video.write(img)
+            img_idx += 1 
         # ====== 保存 CSV ======
         if GET_LATENT and SAVE_CSV and i == STEPS -1 > 0:
             latents_all = np.concatenate(latents_list, axis=0)  # [steps*num_envs, D]
@@ -148,7 +184,7 @@ if __name__ == '__main__':
     RECORD_FRAMES = False
     MOVE_CAMERA = False
     PLOT = False
-    GET_LATENT = True
+    GET_LATENT = False
     args = get_args()
     args.rl_device = 'cpu'
     play(args)

@@ -12,7 +12,7 @@ import copy
 from humanoidGym.learning.algorithms.normalizer import EmpiricalNormalization
 
 from humanoidGym.learning.utils.helper import get_activation, mlp_factory
-from humanoidGym.learning.utils.module import PureVqvaeEMA,StateHistoryEncoder
+from humanoidGym.learning.utils.module import PureVqvaeEMA,StateHistoryEncoder,PureBetaVAE
 
 
 from humanoidGym.learning.utils.helper import smooth_decay, smooth_decay_se
@@ -30,22 +30,10 @@ class InferenceActor(nn.Module):
         y = self.actor_module(x_norm)
         return y
     
-class InferenceTeacherActor(nn.Module):
-    def __init__(self,actor_module,norm_module,critic_norm_module):
-        super().__init__()
-        self.actor_module = actor_module
-        self.norm_module = norm_module
-        self.critic_norm_module = critic_norm_module
+
+
     
-    def forward(self,x):
-        x_norm = self.norm_module(x)
-        # y_norm = self.critic_norm_module(y)
-        # height = y_norm[:,:187]
-        a = self.actor_module(x_norm)
-        return a
-
-
-class MlpVqvaeLongEstLayerNormFallPredictRegressionActor(nn.Module):
+class MlpBVAERegressionActor(nn.Module):
     def __init__(self,
                  num_prop,
                  num_hist,
@@ -53,52 +41,38 @@ class MlpVqvaeLongEstLayerNormFallPredictRegressionActor(nn.Module):
                  latent_dim,
                  num_actions,
                  activation) -> None:
-        super(MlpVqvaeLongEstLayerNormFallPredictRegressionActor,self).__init__()
+        super(MlpBVAERegressionActor,self).__init__()
         self.num_prop = num_prop
         self.num_hist = num_hist
-        
-        self.actor = nn.Sequential(nn.Linear(latent_dim + (num_prop-9) + 4 + 4 + 32 + 3,512),
-                                   nn.ELU(),
-                                   nn.Linear(512,256),
-                                   nn.ELU(),
-                                   nn.Linear(256,128),
-                                   nn.LayerNorm(128),
-                                   nn.ELU(),
-                                   nn.Linear(128,num_actions))
+        self.actor = nn.Sequential(*mlp_factory(activation=activation,
+                                 input_dims=68, # remove baselin
+                                 out_dims=num_actions,
+                                 hidden_dims=actor_dims))
        
-        self.Vae = PureVqvaeEMA(in_dim=num_prop-9,output_dim=num_prop-9,num_emb=128)
+        self.Vae = PureBetaVAE(in_dim=(num_prop-9)*50,beta=0.2,output_dim=num_prop-9) #remove baselin and command
         
         self.long_encoder = StateHistoryEncoder(input_size=num_prop-9,
                                              tsteps = num_hist-1,
-                                             output_size=16)
+                                             output_size=32)
         
         self.short_encoder = nn.Sequential(nn.Linear((num_prop-9)*5,128),
                                            nn.ELU(),
                                            nn.Linear(128,64),
                                            nn.ELU(),
-                                           nn.Linear(64,16),
+                                           nn.Linear(64,32),
                                            nn.ELU())
         
-        self.estimator_backbone = nn.Sequential(nn.Linear((num_prop-9)*5,128),
-                                          nn.ELU(),
-                                          nn.Linear(128,64),
-                                          nn.ELU())
-        
-        self.predict_latent_layer = nn.Sequential(nn.Linear(64+16,32),
+        self.predict_latent_layer = nn.Sequential(nn.Linear(64,32),
                                           nn.ELU(),
                                           nn.Linear(32,latent_dim))
         
-        self.predict_vel_layer = nn.Sequential(nn.Linear(64+16,32),
+        self.predict_vel_layer = nn.Sequential(nn.Linear(64,32),
                                    nn.ELU(),
                                    nn.Linear(32,3))
         
-        self.predict_contact_layer = nn.Sequential(nn.Linear(64+16,32),
+        self.predict_contact_layer =nn.Sequential(nn.Linear(64,32),
                                    nn.ELU(),
                                    nn.Linear(32,2))
-        
-        self.predict_gravity_vec_layer = nn.Sequential(nn.Linear(64+16,32),
-                                   nn.ELU(),
-                                   nn.Linear(32,3))
         
         self.random = 1
         
@@ -111,67 +85,58 @@ class MlpVqvaeLongEstLayerNormFallPredictRegressionActor(nn.Module):
         # obs_hist = self.obs_normalizer(obs_hist_flatten.reshape(-1,self.num_prop)).reshape(-1,self.num_hist,self.num_prop)
         obs_hist = obs_hist_flatten.reshape(-1,self.num_hist,self.num_prop)# add 3 for baselin
         return obs_hist
-    
-    def reshape_critic(self,critic_obs_hist_flatten):
-        height = critic_obs_hist_flatten[:,:187]
-        critic_obs_hist = critic_obs_hist_flatten[:,187:].reshape(-1,5,50 + 19 + 6 + 1)# add 3 for baselin
-        return critic_obs_hist,height
 
     def forward(self,obs_hist_flatten):
         obs_hist = self.reshape(obs_hist_flatten)
-        b,_,_ = obs_hist.size()
-        
-        short_hist_flatten = obs_hist[:,-5:,9:].reshape(b,-1)
-        short_encode = self.short_encoder(short_hist_flatten)
-        long_encode = self.long_encoder(obs_hist[:,1:,9:]) #remove linvel and command
+        b,l,_ = obs_hist.size()
+        vae_input = obs_hist[:,:-1,9:].reshape(b,-1)
+        recon,z, mu, log_var = self.Vae(vae_input) # remove linvel and command
         
         with torch.no_grad():
-            encode = torch.cat([self.estimator_backbone(short_hist_flatten),long_encode],dim=-1)
-            latents = self.predict_latent_layer(encode)
+            short_encode = self.short_encoder(obs_hist[:,-5:,9:].reshape(b,-1))
+            long_encode = self.long_encoder(obs_hist[:,1:,9:]) #remove linvel and command
+            encode = torch.cat([short_encode,long_encode],dim=-1)
             predicted_vel = self.predict_vel_layer(encode)
             predicted_contact = self.predict_contact_layer(encode)
-            predicted_grad_vec = self.predict_gravity_vec_layer(encode)
-            
-        actor_input = torch.cat([short_encode,long_encode,latents.detach(),predicted_vel.detach(),predicted_contact.detach(),predicted_grad_vec.detach(),obs_hist[:,-1,9:],obs_hist[:,-1,3:6]],dim=-1) # remove linvel
+
+
+        actor_input = torch.cat([mu,predicted_contact.detach(),predicted_vel.detach(),obs_hist[:,-1,9:],obs_hist[:,-1,3:6],obs_hist[:,-1,6:8]],dim=-1) # remove linvel
         mean  = self.actor(actor_input)
-    
         return mean
     
     def VaeLoss(self,obs_hist_flatten,critic_obs_flatten):
         
         obs_hist = self.reshape(obs_hist_flatten)
-        critic_hist,height = self.reshape_critic(critic_obs_flatten)
         b,l,_ = obs_hist.size()
         
         # VAE update
-        vae_input = obs_hist[:,:,9:].reshape(b*l,-1)
-        recon,quantize,z,onehot_encode = self.Vae(vae_input)
-        loss = self.Vae.loss_fn(vae_input,recon,quantize,z,onehot_encode)
+        vae_input = obs_hist[:,:-1,9:].reshape(b,-1)
+        recon_target = obs_hist[:,-1,9:]
+        recon,z, mu, log_var = self.Vae(vae_input) # remove linvel and command
+        recon_loss = self.Vae.loss_fn(recon_target,recon,mu,log_var) # remove linvel and command
+     
         
         # regression
         with torch.no_grad():
-            _,_,future_latent,_ = self.Vae(obs_hist[:,-1,9:])
-            long_encode = self.long_encoder(obs_hist[:,:-1,9:])
+            _,_, mu,_ = self.Vae(vae_input)
         
-        encode = torch.cat([self.estimator_backbone(obs_hist[:,-6:-1,9:].reshape(b,-1)),long_encode],dim=-1)
-        predict_latent = self.predict_latent_layer(encode)
+        short_encode = self.short_encoder(obs_hist[:,-6:-1,9:].reshape(b,-1))
+        long_encode = self.long_encoder(obs_hist[:,:-1,9:])
+        encode = torch.cat([short_encode,long_encode],dim=-1)
         predict_vel = self.predict_vel_layer(encode)
         predict_contact = self.predict_contact_layer(encode)
-        predict_gra_vec = self.predict_gravity_vec_layer(encode)
         
-        latent_loss = F.mse_loss(predict_latent,future_latent)
-        mseloss = F.mse_loss(predict_vel,obs_hist[:,-2,:3].detach())
-        contact_loss = F.mse_loss(predict_contact,critic_hist[:,-2,-2:].detach())
-        gravity_loss = F.mse_loss(predict_gra_vec,critic_hist[:,-1,6:9].detach())
+      
+        mseloss = F.mse_loss(predict_vel,obs_hist[:,-1,:3].detach())
+        contact_loss = F.mse_loss(predict_contact,critic_obs_flatten[:,-2:])
 
-        loss = loss + mseloss + latent_loss + contact_loss + gravity_loss
-        return loss
+        # loss = recon_loss + mseloss  + contact_loss
+        return recon_loss,mseloss,contact_loss
     
 
 
 
-
-class ActorCriticReg(nn.Module):
+class ActorCriticDream(nn.Module):
     is_recurrent = False
     def __init__(self,  
                  num_prop,
@@ -181,49 +146,37 @@ class ActorCriticReg(nn.Module):
                  critic_hidden_dims=[512, 256, 128],
                  activation='elu',
                  init_noise_std=1.0,
-                 latent_dims=16,
-                mlp_encoder_dims=[256, 128, 64],
                  **kwargs):
-        super(ActorCriticReg, self).__init__()
+        super(ActorCriticDream, self).__init__()
 
         self.kwargs = kwargs
 
         activation = get_activation(activation)
         self.num_prop = num_prop
+        self.num_obs_h1 = num_prop 
         self.num_hist = num_hist
         self.num_actions = num_actions
         self.num_critic_obs = num_critic_obs
 
-        self.latent_dims = latent_dims
         
-        self.actor_teacher_backbone = MlpVqvaeLongEstLayerNormFallPredictRegressionActor(num_prop=num_prop,#remove linear vel
+        self.actor_teacher_backbone = MlpBVAERegressionActor(num_prop=num_prop,#remove linear vel
                                 num_hist=num_hist,
                                 num_actions=num_actions,
                                 actor_dims=[512,256,128],
                                 activation=activation,
-                                latent_dim=self.latent_dim)
+                                latent_dim=16)
         
         
         # Value function
-        critic_input_dims = self.num_prop + self.latent_dims + 3 # 3 is lin_vel
-        critic_layers = mlp_factory(activation,critic_input_dims,1,critic_hidden_dims,last_act=False)
+        critic_layers = mlp_factory(activation,self.num_critic_obs,1,critic_hidden_dims,last_act=False)
         self.critic = nn.Sequential(*critic_layers)
-
-        self.encoder_critic = mlp_factory(
-            activation,
-            input_dims=self.num_critic_obs,
-            out_dims=self.latent_dims,
-            hidden_dims=mlp_encoder_dims,
-        )
 
         # Action noise
         self.std = nn.Parameter(init_noise_std * torch.ones(num_actions))
         self.distribution = None
         # disable args validation for speedup
         Normal.set_default_validate_args = False
-        
-     
-        self.optimizer = optim.Adam(self.actor_teacher_backbone.parameters(), lr=1e-3)
+    
       
     @staticmethod
     # not used at the moment
@@ -266,26 +219,17 @@ class ActorCriticReg(nn.Module):
     def act_inference(self,obs_hist, **kwargs):
         mean = self.actor_teacher_backbone(obs_hist)
         return mean
-        
+    
+    def get_latents(self,obs_hist):
+        latent,pred_class= self.actor_teacher_backbone.get_latent(obs_hist)
+        return latent,pred_class
+    
     def evaluate(self, critic_observations, **kwargs):
         # critic_observations = self.critic_normalize(critic_observations)
         value = self.critic(critic_observations)
         return value
     
-    def subtask_loss(self,obs_hist,critic_obs_hist):
-      
-        return self.actor_teacher_backbone.VaeLoss(obs_hist,critic_obs_hist)
-     
-    
-    
-    def update(self,obs_hist,critic_obs_hist):
-
-        self.optimizer.zero_grad()
-        loss = self.subtask_loss(obs_hist,critic_obs_hist)
-        loss.backward()
-        nn.utils.clip_grad_norm_(self.parameters(),1)
-        self.optimizer.step()
-        return loss.detach()
+   
     
     def set_random(self,it):
         random = smooth_decay_se(it,3000,2000,1,0.2)    
