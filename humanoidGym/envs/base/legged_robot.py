@@ -190,7 +190,8 @@ class LeggedRobot(BaseTask):
         # reset buffers
         self.actions[env_ids] = 0.
         self.last_actions[env_ids] = 0.
-        self.action_filterd[env_ids] = 0.
+        if self.cfg.control.use_filter:
+            self.action_filterd[env_ids] = 0.
         self.last_last_actions[env_ids] = 0.
         self.last_dof_vel[env_ids] = 0.
         self.last_root_vel[env_ids] = 0.

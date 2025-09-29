@@ -45,7 +45,7 @@ class MlpVqvaeLongEstLayerNormFallPredictRegressionActor(nn.Module):
         self.num_prop = num_prop
         self.num_hist = num_hist
         
-        self.actor = nn.Sequential(nn.Linear(latent_dim + (num_prop-9) + 4 + 4 + 32-16 + 3,512),
+        self.actor = nn.Sequential(nn.Linear(latent_dim + (num_prop-9) + 4 + 4 + 32 + 3,512),
                                    nn.ELU(),
                                    nn.Linear(512,256),
                                    nn.ELU(),
@@ -123,6 +123,7 @@ class MlpVqvaeLongEstLayerNormFallPredictRegressionActor(nn.Module):
             predicted_contact = self.predict_contact_layer(encode)
             predicted_grad_vec = self.predict_gravity_vec_layer(encode)
             
+        # actor_input = torch.cat([short_encode,long_encode,z.detach(),predicted_vel.detach(),predicted_contact.detach(),predicted_grad_vec.detach(),obs_hist[:,-1,9:],obs_hist[:,-1,3:6]],dim=-1) # remove linvel
         actor_input = torch.cat([short_encode,long_encode,predicted_vel.detach(),predicted_contact.detach(),predicted_grad_vec.detach(),obs_hist[:,-1,9:],obs_hist[:,-1,3:6]],dim=-1) # remove linvel
         mean  = self.actor(actor_input)
     

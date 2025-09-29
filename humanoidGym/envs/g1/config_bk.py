@@ -20,7 +20,7 @@ DAMPING_7520_22 = 2.0 * DAMPING_RATIO * ARMATURE_7520_22 * NATURAL_FREQ #6.3083
 DAMPING_4010 = 2.0 * DAMPING_RATIO * ARMATURE_4010 * NATURAL_FREQ #1.0681
 
 
-class G1RoughCfg( LeggedRobotCfg ):
+class G1TeacherCfg( LeggedRobotCfg ):
     class init_state( LeggedRobotCfg.init_state ):
         pos = [0.0, 0.0, 0.82] # x,y,z [m]
         default_joint_angles = { # = target angles [rad] when action = 0.0
@@ -110,7 +110,7 @@ class G1RoughCfg( LeggedRobotCfg ):
         rfi_ep = [-0.1,0.1]
         rfi_st = [-0.1,0.1]
          
-        randomize_motor_zero_offset = True
+        randomize_motor_zero_offset = False
         motor_zero_offset_range = [-0.035, 0.035] # Offset to add to the motor angles
 
         randomize_joint_friction = True
@@ -120,7 +120,7 @@ class G1RoughCfg( LeggedRobotCfg ):
         joint_damping_range = [0.3, 1.5]
 
 
-        randomize_joint_armature = True
+        randomize_joint_armature = False
         joint_armature_range = [0.008, 0.06] 
         
     class terrain(LeggedRobotCfg.terrain):
@@ -226,9 +226,9 @@ class G1RoughCfg( LeggedRobotCfg ):
         # action scale: target angle = actionScale * action + defaultAngle
         
         # decimation: Number of control action updates @ sim DT per policy DT
-        decimation = 4
+        decimation = 20
         use_filter = False
-        exp_avg_decay = 1.0  #40*0.02
+        exp_avg_decay = 1 #40*0.02
 
     class asset( LeggedRobotCfg.asset ):
         file = '{LEGGED_GYM_ROOT_DIR}/humanoidGym/resources/robots/g1_description/g1_12dof.urdf'
@@ -290,23 +290,63 @@ class G1RoughCfg( LeggedRobotCfg ):
         
         class scales( LeggedRobotCfg.rewards.scales ):
            
-            tracking_lin_vel = 1.0
-            tracking_ang_vel = 0.5
-            lin_vel_z = -2.0
-            ang_vel_xy = -0.05
-            orientation = -1.0
-            base_height = -10.0
+            joint_pos = 0.5#1.0#2.0#3.0
+            feet_clearance = 0.5#1.0
+            feet_contact_number = 2.0#1.0#1.0
+            no_fly = 0.5
+            feet_air_time = 1.5#2.0
+            
+            foot_slip = -0.4#-0.1
+            feet_distance = 0.2
+            knee_distance = 0.2
+            feet_rotation = 0.2
+
+            tracking_lin_vel = 1.4
+            tracking_ang_vel = 1.1
+            vel_mismatch_exp = 0.5
+            low_speed = 0.2
+            track_vel_hard = 0.5
+            
+            # base pos
+            default_joint_pos = 1
+            orientation = 1.0#1.0
+            base_height = 0.2#0.05
+            base_acc = 0.2
+            # energy
+            action_smoothness = -0.02
+            hip_yaw_action_smoothness = -0.005
+            hip_roll_action_smoothness = -0.005
+            ankle_pitch_action_smoothness = -0.005
+            ankle_roll_action_smoothness = -0.005
+          
+            torques = -0.00001
+            # power = -1e-5
+            dof_vel = -1e-5
             dof_acc = -2.5e-7
-            dof_vel = -1e-3
-            feet_air_time = 0.0
-            collision = 0.0
-            action_rate = -0.01
-            dof_pos_limits = -5.0
-            alive = 0.15
-            hip_pos = -1.0
-            contact_no_vel = -0.2
-            feet_swing_height = -20.0
-            feet_contact_number = 0.18
+            
+            stumble = -5.0
+            foot_normal_reward = 0.05
+            feet_height_var = 0.5
+            
+            ankle_energy = 0.2
+            hip_yaw_energy = 0.2
+            knee_energy = 0.1
+            hip_pitch_energy = 0.1
+            
+            default_joint_yaw = 0.5
+            default_joint_ankle_roll = 0.5
+            
+            contact_momentum = -1e-4
+            foot_landing_vel = -0.1
+            
+            dof_vel_limits = -1
+            dof_pos_limits = -10.
+            dof_torque_limits = -0.1
+            # ankle_pitch_limit = 10
+            yaw_error_when_rate_matches = -5
+            
+            termination = -10#-10
+            collision = -10
 
             
     class normalization:
@@ -331,7 +371,7 @@ class G1RoughCfg( LeggedRobotCfg ):
             height_measurements = 0.1
     
     class sim:
-        dt =  0.005
+        dt =  0.001
         substeps = 1
         gravity = [0., 0. ,-9.81]  # [m/s^2]
         up_axis = 1  # 0 is y, 1 is z
@@ -350,7 +390,7 @@ class G1RoughCfg( LeggedRobotCfg ):
             contact_collection = 2 # 0: never, 1: last sub-step, 2: all sub-steps (default=2)
 
 
-class G1RoughCfgPPO( LeggedRobotCfgPPO ):
+class G1TeacherCfgPPO( LeggedRobotCfgPPO ):
     class policy:
         init_noise_std = 0.8
         activation = 'elu' # can be elu, relu, selu, crelu, lrelu, tanh, sigmoid

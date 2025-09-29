@@ -46,7 +46,7 @@ def get_euler_xyz_tensor(quat):
     euler_xyz[euler_xyz > np.pi] -= 2 * np.pi
     return euler_xyz
 
-class G1Robot(LeggedRobot):
+class G1TeacherRobot(LeggedRobot):
     
     def _create_envs(self):
         """ Creates environments:
@@ -283,27 +283,29 @@ class G1Robot(LeggedRobot):
 
         clip_actions = self.cfg.normalization.clip_actions
         self.actions = torch.clip(actions, -clip_actions, clip_actions).to(self.device)
-
+        actions_scaled = self.actions * self.action_scales
+ 
+        if self.cfg.domain_rand.add_action_lag:
+            self.action_lag_buffer[:,:,1:] = self.action_lag_buffer[:,:,:self.cfg.domain_rand.action_lag_timesteps_range[1]].clone()
+            self.action_lag_buffer[:,:,0] = actions_scaled.clone()
+            lagged_actions_scaled = self.action_lag_buffer[torch.arange(self.num_envs),:,self.action_lag_timestep.long()]
+        else:
+            lagged_actions_scaled = actions_scaled
+        
+        if self.cfg.control.use_filter:
+                self.action_filterd = self.exp_avg_filter(lagged_actions_scaled, self.action_filterd,self.cfg.control.exp_avg_decay) 
+        else:
+            self.action_filterd = lagged_actions_scaled  
         # step physics and render each frame
         self.render()
             
         for _ in range(self.cfg.control.decimation):
             
-            actions_scaled = self.actions * self.action_scales
- 
-            if self.cfg.domain_rand.add_action_lag:
-                self.action_lag_buffer[:,:,1:] = self.action_lag_buffer[:,:,:self.cfg.domain_rand.action_lag_timesteps_range[1]].clone()
-                self.action_lag_buffer[:,:,0] = actions_scaled.clone()
-                lagged_actions_scaled = self.action_lag_buffer[torch.arange(self.num_envs),:,self.action_lag_timestep.long()]
-            else:
-                lagged_actions_scaled = actions_scaled
-                
-            if self.cfg.control.use_filter:
-                self.action_filterd = self.exp_avg_filter(lagged_actions_scaled, self.action_filterd,self.cfg.control.exp_avg_decay) 
-                self.torques = self._compute_torques(self.action_filterd).view(self.torques.shape)
-            else:
-                self.torques = self._compute_torques(lagged_actions_scaled).view(self.torques.shape)
-                
+            
+            
+            self.torques = self._compute_torques(self.action_filterd).view(self.torques.shape)
+          
+  
             self.gym.set_dof_actuation_force_tensor(self.sim, gymtorch.unwrap_tensor(self.torques))
             self.gym.simulate(self.sim)
             if self.cfg.env.test:
@@ -1256,21 +1258,4 @@ class G1Robot(LeggedRobot):
         # print(penalty[0])
         return penalty
     
-    def _reward_feet_swing_height(self):
-        contact = torch.norm(self.contact_forces[:, self.feet_indices, :3], dim=2) > 1.
-        pos_error = torch.square(self.feet_pos[:, :, 2] - 0.08) * ~contact
-        return torch.sum(pos_error, dim=(1))
-    
-    def _reward_alive(self):
-        # Reward for staying alive
-        return 1.0
-    
-    def _reward_contact_no_vel(self):
-        # Penalize contact with no velocity
-        contact = torch.norm(self.contact_forces[:, self.feet_indices, :3], dim=2) > 1.
-        contact_feet_vel = self.feet_vel * contact.unsqueeze(-1)
-        penalize = torch.square(contact_feet_vel[:, :, :3])
-        return torch.sum(penalize, dim=(1,2))
-    
-    def _reward_hip_pos(self):
-        return torch.sum(torch.square(self.dof_pos[:,[1,2,7,8]]), dim=1)
+ 

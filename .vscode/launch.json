@@ -16,7 +16,7 @@
                 "--headless",
                 // "--experiment_name","miniloong_vq",
                 // "--resume",
-                 "--experiment_name","g1_PPOLSE",
+                //  "--experiment_name","g1_PPOVQ",
                 //  "--checkpoint=20800",
                 //  "--load_run=Sep23_00-56-26_",
                 //  "--resume"
@@ -32,10 +32,10 @@
                 "--task", "g1_teacher",
                 "--rl_device=cpu",
                 // "--num_envs", "1",
-                // "--experiment_name","g1_PPOVq",
+                // "--experiment_name","baseline",
                 //  "--num_envs", "16",
                 //  "--checkpoint=8000",
-                 "--load_run=Sep23_00-56-26_"
+                //  "--load_run=VQ_class"
               
             ]
         }

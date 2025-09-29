@@ -69,19 +69,19 @@ class G1TeacherCfg( LeggedRobotCfg ):
 
     class domain_rand(LeggedRobotCfg.domain_rand):
         randomize_friction = True
-        friction_range = [0.4, 1.3]
+        friction_range = [0.25, 1.75]
         
         randomize_base_mass = True
-        added_mass_range = [-2., 5.]
+        added_mass_range = [-1., 5.]
         
         push_robots = True
-        push_interval_s = 10
-        max_push_vel_xy = 1.
+        push_interval_s = 5
+        max_push_vel_xy = 1.5
         
         randomize_com = True
-        com_x = [-0.1,0.1]
-        com_y = [-0.1,0.1]
-        com_z = [-0.1,0.1]
+        com_x = [-0.03,0.03]
+        com_y = [-0.03,0.03]
+        com_z = [-0.03,0.03]
         
         randomize_motor_strength = True
         motor_strength = [0.8,1.2]
@@ -90,14 +90,14 @@ class G1TeacherCfg( LeggedRobotCfg ):
         kp_range = [0.8,1.2]
         kd_range = [0.8,1.2]
         
-        add_action_lag = True
+        add_action_lag = False
         action_lag_timesteps_range = [0,15]
         
         randomize_restitution = False
         restitution_range = [0.0,1.0]
         
         randomize_inertia = True
-        randomize_inertia_range = [0.9, 1.1]
+        randomize_inertia_range = [0.8, 1.2]
         # randomize_inertia_range = [0.9, 1.1]
         
         randomize_init_joint_scale = True
@@ -110,17 +110,18 @@ class G1TeacherCfg( LeggedRobotCfg ):
         rfi_ep = [-0.1,0.1]
         rfi_st = [-0.1,0.1]
          
-        randomize_motor_zero_offset = False
+        randomize_motor_zero_offset = True
         motor_zero_offset_range = [-0.035, 0.035] # Offset to add to the motor angles
 
         randomize_joint_friction = False
-        joint_friction_range = [0.8, 1.2]
+        joint_friction_range = [0.01, 0.5]
 
         randomize_joint_damping = False
-        joint_damping_range = [0.5, 2.5]
+        joint_damping_range = [0.3, 1.5]
 
-        randomize_joint_armature = False
-        joint_armature_range = [0.8, 1.2]
+
+        randomize_joint_armature = True
+        joint_armature_range = [0.008, 0.06] 
         
     class terrain(LeggedRobotCfg.terrain):
         # mesh_type = 'plane'
@@ -170,64 +171,76 @@ class G1TeacherCfg( LeggedRobotCfg ):
     class control( LeggedRobotCfg.control ):
         # PD Drive parameters:
         control_type = 'P'
-        stiffness = {'left_hip_pitch_joint': STIFFNESS_7520_14,
-                     'left_hip_roll_joint':  STIFFNESS_7520_22,
-                     'left_hip_yaw_joint': STIFFNESS_7520_14,
-                     'left_knee_joint': STIFFNESS_7520_22,
-                     'left_ankle_pitch_joint': 2.0 * STIFFNESS_5020,
-                     'left_ankle_roll_joint': 2.0 * STIFFNESS_5020,
-                     'right_hip_pitch_joint': STIFFNESS_7520_14,
-                     'right_hip_roll_joint':  STIFFNESS_7520_22,
-                     'right_hip_yaw_joint': STIFFNESS_7520_14,
-                     'right_knee_joint': STIFFNESS_7520_22,
-                     'right_ankle_pitch_joint': 2.0 * STIFFNESS_5020,
-                     'right_ankle_roll_joint': 2.0 * STIFFNESS_5020,
-                     'waist_yaw_joint': STIFFNESS_7520_14,
-                     'left_shoulder_pitch_joint': STIFFNESS_5020,
-                     'left_shoulder_roll_joint': STIFFNESS_5020,
-                     'left_shoulder_yaw_joint': STIFFNESS_5020,
-                     'left_elbow_joint': STIFFNESS_5020,
-                     'right_shoulder_pitch_joint': STIFFNESS_5020,
-                     'right_shoulder_roll_joint': STIFFNESS_5020,
-                     'right_shoulder_yaw_joint': STIFFNESS_5020,
-                     'right_elbow_joint': STIFFNESS_5020,
-        }  # [N*m/rad]
-        damping = {  'left_hip_pitch_joint': DAMPING_7520_14,
-                     'left_hip_roll_joint':  DAMPING_7520_22,
-                     'left_hip_yaw_joint': DAMPING_7520_14,
-                     'left_knee_joint': DAMPING_7520_22,
-                     'left_ankle_pitch_joint': 2.0 * DAMPING_5020,
-                     'left_ankle_roll_joint': 2.0 * DAMPING_5020,
-                     'right_hip_pitch_joint': DAMPING_7520_14,
-                     'right_hip_roll_joint':  DAMPING_7520_22,
-                     'right_hip_yaw_joint': DAMPING_7520_14,
-                     'right_knee_joint': DAMPING_7520_22,
-                     'right_ankle_pitch_joint': 2.0 * DAMPING_5020,
-                     'right_ankle_roll_joint': 2.0 * DAMPING_5020,
-                     'waist_yaw_joint': DAMPING_7520_14,
-                     'left_shoulder_pitch_joint': DAMPING_5020,
-                     'left_shoulder_roll_joint': DAMPING_5020,
-                     'left_shoulder_yaw_joint': DAMPING_5020,
-                     'left_elbow_joint': DAMPING_5020,
-                     'right_shoulder_pitch_joint': DAMPING_5020,
-                     'right_shoulder_roll_joint': DAMPING_5020,
-                     'right_shoulder_yaw_joint': DAMPING_5020,
-                     'right_elbow_joint': DAMPING_5020,
-        }
+        # stiffness = {'left_hip_pitch_joint': STIFFNESS_7520_14,
+        #              'left_hip_roll_joint':  STIFFNESS_7520_22,
+        #              'left_hip_yaw_joint': STIFFNESS_7520_14,
+        #              'left_knee_joint': STIFFNESS_7520_22,
+        #              'left_ankle_pitch_joint': 2.0 * STIFFNESS_5020,
+        #              'left_ankle_roll_joint': 2.0 * STIFFNESS_5020,
+        #              'right_hip_pitch_joint': STIFFNESS_7520_14,
+        #              'right_hip_roll_joint':  STIFFNESS_7520_22,
+        #              'right_hip_yaw_joint': STIFFNESS_7520_14,
+        #              'right_knee_joint': STIFFNESS_7520_22,
+        #              'right_ankle_pitch_joint': 2.0 * STIFFNESS_5020,
+        #              'right_ankle_roll_joint': 2.0 * STIFFNESS_5020,
+        #              'waist_yaw_joint': STIFFNESS_7520_14,
+        #              'left_shoulder_pitch_joint': STIFFNESS_5020,
+        #              'left_shoulder_roll_joint': STIFFNESS_5020,
+        #              'left_shoulder_yaw_joint': STIFFNESS_5020,
+        #              'left_elbow_joint': STIFFNESS_5020,
+        #              'right_shoulder_pitch_joint': STIFFNESS_5020,
+        #              'right_shoulder_roll_joint': STIFFNESS_5020,
+        #              'right_shoulder_yaw_joint': STIFFNESS_5020,
+        #              'right_elbow_joint': STIFFNESS_5020,
+        # }  # [N*m/rad]
+        # damping = {  'left_hip_pitch_joint': DAMPING_7520_14,
+        #              'left_hip_roll_joint':  DAMPING_7520_22,
+        #              'left_hip_yaw_joint': DAMPING_7520_14,
+        #              'left_knee_joint': DAMPING_7520_22,
+        #              'left_ankle_pitch_joint': 2.0 * DAMPING_5020,
+        #              'left_ankle_roll_joint': 2.0 * DAMPING_5020,
+        #              'right_hip_pitch_joint': DAMPING_7520_14,
+        #              'right_hip_roll_joint':  DAMPING_7520_22,
+        #              'right_hip_yaw_joint': DAMPING_7520_14,
+        #              'right_knee_joint': DAMPING_7520_22,
+        #              'right_ankle_pitch_joint': 2.0 * DAMPING_5020,
+        #              'right_ankle_roll_joint': 2.0 * DAMPING_5020,
+        #              'waist_yaw_joint': DAMPING_7520_14,
+        #              'left_shoulder_pitch_joint': DAMPING_5020,
+        #              'left_shoulder_roll_joint': DAMPING_5020,
+        #              'left_shoulder_yaw_joint': DAMPING_5020,
+        #              'left_elbow_joint': DAMPING_5020,
+        #              'right_shoulder_pitch_joint': DAMPING_5020,
+        #              'right_shoulder_roll_joint': DAMPING_5020,
+        #              'right_shoulder_yaw_joint': DAMPING_5020,
+        #              'right_elbow_joint': DAMPING_5020,
+        # }
+        stiffness = {'hip_yaw': 100,
+                     'hip_roll': 100,
+                     'hip_pitch': 100,
+                     'knee': 150,
+                     'ankle': 40,
+                     }  # [N*m/rad]
+        damping = {  'hip_yaw': 2,
+                     'hip_roll': 2,
+                     'hip_pitch': 2,
+                     'knee': 4,
+                     'ankle': 2,
+                     }  # [N*m/rad]  # [N*m*s/rad]
         # action scale: target angle = actionScale * action + defaultAngle
-        action_scales = [
-                0.54754647, 0.35066147, 0.54754647, 0.35066147, 0.43857731, 0.43857731,
-                0.54754647, 0.35066147, 0.54754647, 0.35066147, 0.43857731, 0.43857731,
-                0.54754647,
-                0.43857731, 0.43857731, 0.43857731, 0.43857731,
-                0.43857731, 0.43857731, 0.43857731, 0.43857731]
+        # action_scales = [
+        #         0.54754647, 0.35066147, 0.54754647, 0.35066147, 0.43857731, 0.43857731,
+        #         0.54754647, 0.35066147, 0.54754647, 0.35066147, 0.43857731, 0.43857731,
+        #         0.54754647,
+        #         0.43857731, 0.43857731, 0.43857731, 0.43857731,
+        #         0.43857731, 0.43857731, 0.43857731, 0.43857731]
                      # [N*m/rad]  # [N*m*s/rad]
         # action scale: target angle = actionScale * action + defaultAngle
-        
+        action_scales = 0.5
         # decimation: Number of control action updates @ sim DT per policy DT
-        decimation = 20
-        use_filter = True
-        exp_avg_decay = 1.0  #40*0.02
+        decimation = 4
+        use_filter = False
+        exp_avg_decay = 0.8 #40*0.02
 
     class asset( LeggedRobotCfg.asset ):
         file = '{LEGGED_GYM_ROOT_DIR}/humanoidGym/resources/robots/g1_description/g1_12dof.urdf'
@@ -370,7 +383,7 @@ class G1TeacherCfg( LeggedRobotCfg ):
             height_measurements = 0.1
     
     class sim:
-        dt =  0.001
+        dt =  0.005
         substeps = 1
         gravity = [0., 0. ,-9.81]  # [m/s^2]
         up_axis = 1  # 0 is y, 1 is z
@@ -439,5 +452,5 @@ class G1TeacherCfgPPO( LeggedRobotCfgPPO ):
         algorithm_class_name = 'PPOVQ'
         max_iterations = 30000
         # run_name = 'long_reward_barlowtwin_baseline'
-        experiment_name = 'g1_PPOVQ'
+        experiment_name = 'g1_PPOVQ_0.002'
         resume = False
