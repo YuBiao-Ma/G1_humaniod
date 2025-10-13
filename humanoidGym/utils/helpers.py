@@ -224,6 +224,8 @@ class _OnnxPolicyExporter(torch.nn.Module):
                 dynamic_axes={},
             )
 
+
+
 def exponential_progress(t, max_steps, k=5):
     """
     计算随时间步t指数增长的进度值，范围从0到1。
@@ -275,4 +277,65 @@ class PolicyExporterLSTM(torch.nn.Module):
         traced_script_module = torch.jit.script(self)
         traced_script_module.save(path)
 
+
+class _JitPolicyExporter(nn.Module):
+    """Exporter of actor-critic into PyTorch JIT (.pt) file."""
+
+    def __init__(self, actor_critic, normalizer=None, verbose=False):
+        super().__init__()
+        self.verbose = verbose
+        # 深拷贝模型并移至CPU，避免影响原始模型
+        self.actor_critic = copy.deepcopy(actor_critic).to("cpu")
+        self.is_recurrent = actor_critic.is_recurrent
+        self.encoder = getattr(actor_critic, "encoder", nn.Identity())
+        # 深拷贝归一化器（如存在）
+        self.normalizer = copy.deepcopy(normalizer) if normalizer else nn.Identity()
+        
+        if self.is_recurrent:
+            # 处理循环模型（如LSTM）
+            self.rnn = copy.deepcopy(actor_critic.memory_a.rnn)
+            self.rnn.cpu()
+            #)
+            self.rnn.cpu()
+            # 绑定循环模型的forward方法
+            self.forward = self.forward_lstm
+
+    def forward_lstm(self, x_in, h_in, c_in):
+        """循环模型的前向传播（LSTM）"""
+        x_in = self.normalizer(x_in)  # 输入归一化
+        # LSTM计算（增加时间维度，再挤压）
+        x, (h, c) = self.rnn(x_in.unsqueeze(0), (h_in, c_in))
+        x = x.squeeze(0)
+        # 输出动作和新的隐状态
+        return self.actor_critic.actor(x), h, c
+
+    def forward(self, x):
+        """非循环模型的前向传播"""
+        return self.actor_critic.act_inference(self.normalizer(x))
+
+    def export(self, path, filename):
     
+        self.to("cpu")  # 确保模型在CPU上
+        os.makedirs(path, exist_ok=True)  # 确保输出目录存在
+        output_path = os.path.join(path, filename)
+
+        if self.is_recurrent:
+            # 循环模型：准备示例输入（观测、LSTM隐状态h和c）
+            obs = torch.zeros(1, self.rnn.input_size)  # 观测输入
+            h_in = torch.zeros(self.rnn.num_layers, 1, self.rnn.hidden_size)  # LSTM h状态
+            c_in = torch.zeros(self.rnn.num_layers, 1, self.rnn.hidden_size)  # LSTM c状态
+            # 追踪模型（捕获计算图）
+            traced_model = torch.jit.trace(self, (obs, h_in, c_in))
+            if self.verbose:
+                print(f"循环模型JIT追踪完成，输入: (obs={obs.shape}, h_in={h_in.shape}, c_in={c_in.shape})")
+        else:
+            # 非循环模型：准备示例观测输入
+            obs = torch.zeros(1, self.actor_critic.num_hist * self.actor_critic.num_obs_h1)
+            # 追踪模型
+            traced_model = torch.jit.trace(self, obs)
+            if self.verbose:
+                print(f"非循环模型JIT追踪完成，输入: obs={obs.shape}")
+
+        # 保存JIT模型（.pt文件）
+        torch.jit.save(traced_model, output_path)
+     

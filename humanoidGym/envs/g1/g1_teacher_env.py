@@ -286,23 +286,36 @@ class G1TeacherRobot(LeggedRobot):
 
         # step physics and render each frame
         self.render()
+        actions_scaled = self.actions * self.action_scales
+ 
+        if self.cfg.domain_rand.add_action_lag:
+            self.action_lag_buffer[:,:,1:] = self.action_lag_buffer[:,:,:self.cfg.domain_rand.action_lag_timesteps_range[1]].clone()
+            self.action_lag_buffer[:,:,0] = actions_scaled.clone()
+            lagged_actions_scaled = self.action_lag_buffer[torch.arange(self.num_envs),:,self.action_lag_timestep.long()]
+        else:
+            lagged_actions_scaled = actions_scaled
+                
+        if self.cfg.control.use_filter:
+            self.action_filterd = self.exp_avg_filter(lagged_actions_scaled, self.action_filterd,self.cfg.control.exp_avg_decay) 
+        else:
+            self.action_filterd = lagged_actions_scaled
             
         for _ in range(self.cfg.control.decimation):
             
-            actions_scaled = self.actions * self.action_scales
+            # actions_scaled = self.actions * self.action_scales
  
-            if self.cfg.domain_rand.add_action_lag:
-                self.action_lag_buffer[:,:,1:] = self.action_lag_buffer[:,:,:self.cfg.domain_rand.action_lag_timesteps_range[1]].clone()
-                self.action_lag_buffer[:,:,0] = actions_scaled.clone()
-                lagged_actions_scaled = self.action_lag_buffer[torch.arange(self.num_envs),:,self.action_lag_timestep.long()]
-            else:
-                lagged_actions_scaled = actions_scaled
+            # if self.cfg.domain_rand.add_action_lag:
+            #     self.action_lag_buffer[:,:,1:] = self.action_lag_buffer[:,:,:self.cfg.domain_rand.action_lag_timesteps_range[1]].clone()
+            #     self.action_lag_buffer[:,:,0] = actions_scaled.clone()
+            #     lagged_actions_scaled = self.action_lag_buffer[torch.arange(self.num_envs),:,self.action_lag_timestep.long()]
+            # else:
+            #     lagged_actions_scaled = actions_scaled
                 
-            if self.cfg.control.use_filter:
-                self.action_filterd = self.exp_avg_filter(lagged_actions_scaled, self.action_filterd,self.cfg.control.exp_avg_decay) 
-                self.torques = self._compute_torques(self.action_filterd).view(self.torques.shape)
-            else:
-                self.torques = self._compute_torques(lagged_actions_scaled).view(self.torques.shape)
+            # if self.cfg.control.use_filter:
+                # self.action_filterd = self.exp_avg_filter(lagged_actions_scaled, self.action_filterd,self.cfg.control.exp_avg_decay) 
+            self.torques = self._compute_torques(self.action_filterd).view(self.torques.shape)
+            # else:
+                # self.torques = self._compute_torques(lagged_actions_scaled).view(self.torques.shape)
                 
             self.gym.set_dof_actuation_force_tensor(self.sim, gymtorch.unwrap_tensor(self.torques))
             self.gym.simulate(self.sim)
@@ -622,7 +635,7 @@ class G1TeacherRobot(LeggedRobot):
         contact = self.contact_forces[:, self.feet_indices, 2] > 2.
         stance_mask = self._get_gait_phase().clone()
         # stance_mask[torch.norm(self.commands[:, :3], dim=1) <= self.cfg.commands.stand_com_threshold] = 1
-        reward = torch.where(contact == stance_mask, 1, -0.3)
+        reward = torch.where(contact == stance_mask, 1, -1.0)
         return torch.mean(reward, dim=1)
     
     def _reward_no_fly(self):
@@ -1247,13 +1260,37 @@ class G1TeacherRobot(LeggedRobot):
     
 
     def _reward_yaw_error_when_rate_matches(self):
-        rate_match = torch.abs(self.base_ang_vel[:, 2] - self.commands[:, 2]) < 0.5
+        # 参数（可调）
+        k_yaw = 1.0        # 偏航角误差权重（平方惩罚）
+        k_rate = 1.5       # 偏航速率误差权重（平方惩罚）
+
+
+        # 计算速率匹配条件（绝对误差）
+        rate_err = self.base_ang_vel[:, 2] - self.commands[:, 2]
+        
+
+        # desired yaw（确认 commands 索引是否正确）
         desired_yaw = self.commands[:, 3]
-        yaw_err = torch.atan2(torch.sin(self.rpy[:, 2] - desired_yaw),
-                            torch.cos(self.rpy[:, 2] - desired_yaw))
-        penalty = torch.zeros_like(yaw_err)
-        penalty = torch.where(rate_match, yaw_err**2, penalty)
-        # print(penalty[0])
+
+        # yaw 角误差（-pi..pi）
+        yaw_diff = self.rpy[:, 2] - desired_yaw
+        yaw_err = torch.atan2(torch.sin(yaw_diff), torch.cos(yaw_diff))
+
+        # 基础惩罚：二次惩罚（更平滑、可微）
+        yaw_pen = k_yaw * (yaw_err ** 2)
+        rate_pen = k_rate * (rate_err ** 2)
+
+        # 当速率接近时，放大 yaw 惩罚（鼓励同时满足角度与速率）
+        penalty = rate_pen+yaw_pen
+
+        # print("rate_err:", rate_pen[0].item())
+        
+        # # print("desired_yaw:", desired_yaw[0].item())
+        # print("yaw_err:", yaw_pen[0].item())
+        
+        # print("penalty[0]:", penalty[0].item())
+
         return penalty
+
     
  

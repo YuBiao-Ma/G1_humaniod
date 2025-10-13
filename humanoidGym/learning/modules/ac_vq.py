@@ -249,6 +249,10 @@ class MlpVqvaeSoftmaxLongEstLayerNormFallPredictRegressionTeacherVQSoftmaxActor(
         with torch.no_grad():
             encode = torch.cat([self.estimator_backbone(short_hist_flatten),long_encode],dim=-1)
             latents = self.predict_latent_layer(encode)
+        #     latents = torch.tensor([-0.6771, -0.8103,  0.2300, -0.6442,  2.0588, -0.5993,  1.8343,  0.6600,
+        # -0.5484, -0.0596, -0.2890,  0.2996, -0.6917, -0.1142,  2.0403,  0.7630]).repeat(b,1)
+            # latents = torch.tensor([ 1.2834,  0.0989, -0.8221, -1.3601, -0.9376,  0.6769, -0.7707, -0.1624,
+        # -1.6582, -0.6340,  0.6159,  0.0036,  0.1223, -0.0499, -0.1159,  0.9660]).repeat(b,1)  # flat
             # pred_class = torch.argmax(self.predict_layer(latents), dim=-1) 
             # print(f'地形类别：{pred_class}')
             predicted_vel = self.predict_vel_layer(encode)
@@ -272,6 +276,7 @@ class MlpVqvaeSoftmaxLongEstLayerNormFallPredictRegressionTeacherVQSoftmaxActor(
         with torch.no_grad():
             encode = torch.cat([self.estimator_backbone(short_hist_flatten),long_encode],dim=-1)
             latents = self.predict_latent_layer(encode)
+            print(f'latent向量：{latents[0]}')
             pred_class = torch.argmax(self.predict_layer((latents)), dim=-1) 
             print(f'地形类别：{pred_class[0]}')
        

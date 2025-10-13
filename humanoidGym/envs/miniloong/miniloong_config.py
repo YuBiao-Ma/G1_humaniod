@@ -227,39 +227,37 @@ class MiniloongCfg( LeggedRobotCfg ):
         
         class scales( LeggedRobotCfg.rewards.scales ):
            
-            joint_pos = 0.5
-            feet_clearance = 0.5
-            feet_contact_number = 2.0
+            joint_pos = 0.5#1.0#2.0#3.0
+            feet_clearance = 0.5#1.0
+            feet_contact_number = 2.0#1.0#1.0
             no_fly = 0.5
-            feet_air_time = 1.5
+            feet_air_time = 1.5#2.0
             
-            foot_slip = -0.4
+            foot_slip = -0.4#-0.1
             feet_distance = 0.2
             knee_distance = 0.2
-            # feet_rotation = 0.2
+            feet_rotation = 0.2
 
-            tracking_lin_vel = 2.5 #1.4
-            tracking_ang_vel = 1.5 #1.1
+            tracking_lin_vel = 1.4
+            tracking_ang_vel = 1.1
             vel_mismatch_exp = 0.5
             low_speed = 0.2
-            track_vel_hard = 0.5
+            track_vel_hard = 5 #0.5
             
             # base pos
             default_joint_pos = 1
-            orientation = 1.0
-            base_height_plus = 1
-            # base_height = 0.5
+            orientation = 1.0#1.0
+            base_height = 0.2#0.05
             base_acc = 0.2
-            
             # energy
-            action_smoothness = -0.02
+            action_smoothness = -0.05
             # hip_yaw_action_smoothness = -0.005
             # hip_roll_action_smoothness = -0.005
-            ankle_pitch_action_smoothness = -0.005
-            ankle_roll_action_smoothness = -0.005
+            # ankle_pitch_action_smoothness = -0.005
+            # ankle_roll_action_smoothness = -0.005
           
             torques = -0.00001
-            power = -1e-5
+            # power = -1e-5
             dof_vel = -1e-5
             dof_acc = -2.5e-7
             
@@ -277,13 +275,17 @@ class MiniloongCfg( LeggedRobotCfg ):
             
             contact_momentum = -1e-4
             foot_landing_vel = -0.1
+            # feet_contact_forces = -0.01
             
             dof_vel_limits = -1
             dof_pos_limits = -10.
             dof_torque_limits = -0.1
-           
+            # ankle_pitch_limit = 10
+            yaw_error_when_rate_matches = -0.3
+            action_rate = -0.05
+            torque_ankle_pitch_stance =-0.01
             
-            termination = -1 #-10
+            termination = -10#-10
             collision = -10
             
     class normalization:

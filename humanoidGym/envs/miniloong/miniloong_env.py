@@ -251,6 +251,7 @@ class MiniloongRobot(LeggedRobot):
         self._init_foot()
         self._init_mirror()
         self._init_action_scales()
+        self.feet_contact_time = torch.zeros((self.num_envs, self.feet_num), dtype=torch.float, device=self.device, requires_grad=False)
 
     def update_feet_state(self):
         self.gym.refresh_rigid_body_state_tensor(self.sim)
@@ -670,6 +671,23 @@ class MiniloongRobot(LeggedRobot):
         # stance_mask[torch.norm(self.commands[:, :3], dim=1) <= self.cfg.commands.stand_com_threshold] = 1
         reward = torch.where(contact == stance_mask, 1, -0.3)
         return torch.mean(reward, dim=1)
+    
+    def _reward_torque_ankle_pitch_stance(self):
+         # minimize the torque used in ankle pitch
+        # is_stance = self._get_gait_phase()
+
+        contact = self.contact_forces[:, self.feet_indices, 2] > 5.
+        contact_filt = torch.logical_or(contact, self.last_contacts) 
+        self.last_contacts = contact
+        first_contact = (self.feet_air_time > 0.) * contact_filt
+        self.feet_contact_time += self.dt
+        self.feet_contact_time *= contact_filt
+
+        is_positive_torque = self.torques[:,[4,10]] > 0
+        res = torch.clip(torch.square(self.torques[:,[4,10]]) * self.feet_contact_time *0.1 * contact * is_positive_torque,0,20)
+        res = torch.sum(res,dim=1)
+        # print("feet contact time, res",self.feet_contact_time[0,:],res[0])
+        return res
     
     def _reward_no_fly(self):
         contact = self.contact_forces[:, self.feet_indices, 2] > 2.
@@ -1290,3 +1308,40 @@ class MiniloongRobot(LeggedRobot):
         ankle_pitch_index = [4,10]
         picth_limit_pen = torch.sum((self.dof_pos[:,ankle_pitch_index] - 0.2).clip(max=0),dim=-1)
         return picth_limit_pen
+    
+
+    def _reward_yaw_error_when_rate_matches(self):
+        # 参数（可调）
+        k_yaw = 1.0        # 偏航角误差权重（平方惩罚）
+        k_rate = 1.5       # 偏航速率误差权重（平方惩罚）
+
+
+        # 计算速率匹配条件（绝对误差）
+        rate_err = self.base_ang_vel[:, 2] - self.commands[:, 2]
+        
+
+        # desired yaw（确认 commands 索引是否正确）
+        desired_yaw = self.commands[:, 3]
+
+        # yaw 角误差（-pi..pi）
+        yaw_diff = self.rpy[:, 2] - desired_yaw
+        yaw_err = torch.atan2(torch.sin(yaw_diff), torch.cos(yaw_diff))
+
+        # 基础惩罚：二次惩罚（更平滑、可微）
+        yaw_pen = k_yaw * (yaw_err ** 2)
+        rate_pen = k_rate * (rate_err ** 2)
+
+        # 当速率接近时，放大 yaw 惩罚（鼓励同时满足角度与速率）
+        penalty = rate_pen+yaw_pen
+
+        # print("rate_err:", rate_pen[0].item())
+        
+        # # print("desired_yaw:", desired_yaw[0].item())
+        # print("yaw_err:", yaw_pen[0].item())
+        
+        # print("penalty[0]:", penalty[0].item())
+
+        return penalty
+
+    
+ 

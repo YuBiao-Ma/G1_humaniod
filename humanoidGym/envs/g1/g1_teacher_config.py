@@ -90,8 +90,8 @@ class G1TeacherCfg( LeggedRobotCfg ):
         kp_range = [0.8,1.2]
         kd_range = [0.8,1.2]
         
-        add_action_lag = False
-        action_lag_timesteps_range = [0,15]
+        add_action_lag = True
+        action_lag_timesteps_range = [0,3] #[0,2]
         
         randomize_restitution = False
         restitution_range = [0.0,1.0]
@@ -292,7 +292,7 @@ class G1TeacherCfg( LeggedRobotCfg ):
         target_joint_pos_scale = 0.26#0.26#0.165#0.26#0.165
         # local frame   
         target_feet_height = -0.76#-1.0    
-        cycle_time = 0.6
+        cycle_time = 0.8
         max_contact_force = 500
         tracking_sigma = 5
         
@@ -317,7 +317,7 @@ class G1TeacherCfg( LeggedRobotCfg ):
             tracking_ang_vel = 1.1
             vel_mismatch_exp = 0.5
             low_speed = 0.2
-            track_vel_hard = 0.5
+            track_vel_hard = 5 #0.5
             
             # base pos
             default_joint_pos = 1
@@ -325,7 +325,7 @@ class G1TeacherCfg( LeggedRobotCfg ):
             base_height = 0.2#0.05
             base_acc = 0.2
             # energy
-            action_smoothness = -0.02
+            action_smoothness = -0.05
             # hip_yaw_action_smoothness = -0.005
             # hip_roll_action_smoothness = -0.005
             # ankle_pitch_action_smoothness = -0.005
@@ -350,12 +350,14 @@ class G1TeacherCfg( LeggedRobotCfg ):
             
             contact_momentum = -1e-4
             foot_landing_vel = -0.1
+            # feet_contact_forces = -0.01
             
             dof_vel_limits = -1
             dof_pos_limits = -10.
             dof_torque_limits = -0.1
             # ankle_pitch_limit = 10
-            yaw_error_when_rate_matches = -5
+            yaw_error_when_rate_matches = -0.3
+            action_rate = -0.05
             
             termination = -10#-10
             collision = -10
@@ -451,6 +453,7 @@ class G1TeacherCfgPPO( LeggedRobotCfgPPO ):
         policy_class_name = "ActorCriticVq"
         algorithm_class_name = 'PPOVQ'
         max_iterations = 30000
-        # run_name = 'long_reward_barlowtwin_baseline'
-        experiment_name = 'g1_PPOVQ_0.002'
+        # run_name = 'no_vq_encode'
+        experiment_name = 'g1_PPOVQ_0.005_rand_fric'
+        # load_run_name = 'no_pred'
         resume = False

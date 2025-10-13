@@ -10,13 +10,15 @@ from humanoidGym.utils import get_args, export_policy_as_jit, task_registry, Log
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
+import matplotlib
 import pandas as pd
+
 
 
 def play(args):
     env_cfg, train_cfg = task_registry.get_cfgs(name=args.task)
     # override some parameters for testing
-    env_cfg.env.num_envs = min(env_cfg.env.num_envs, 30)
+    env_cfg.env.num_envs = min(env_cfg.env.num_envs, 10)
     env_cfg.terrain.num_rows = 6
     env_cfg.terrain.num_cols = 1
     # env_cfg.terrain.mesh_type = 'plane'
@@ -29,7 +31,7 @@ def play(args):
     env_cfg.domain_rand.randomize_motor_strength = False
     env_cfg.domain_rand.randomize_com = False
     env_cfg.domain_rand.randomize_gains = False
-    env_cfg.domain_rand.add_action_lag = False
+    env_cfg.domain_rand.add_action_lag = True
     env_cfg.domain_rand.randomize_rfi = False
     env_cfg.domain_rand.randomize_restitution = False
     env_cfg.domain_rand.randomize_init_joint_offset = False
@@ -38,7 +40,7 @@ def play(args):
     env_cfg.domain_rand.randomize_joint_damping = True
     env_cfg.domain_rand.randomize_inertia = False
 
-    env_cfg.env.episode_length_s = 20
+    env_cfg.env.episode_length_s = 200
 
     env_cfg.env.test = True
     env_cfg.commands.ranges.lin_vel_x = [0.6, 0.6]
@@ -63,9 +65,9 @@ def play(args):
         print('Exported policy as jit script to: ', path)
 
     # ====== rollout 配置 ======
-    STEPS = 300
+    STEPS = 220
     REC_ENV_ID = 0  # 记录第0个环境
-    SAVE_PREFIX = "pyramid_sloped_terrain"
+    SAVE_PREFIX = "random_uniform_terrain"
     SAVE_CSV = True
 
 
@@ -120,7 +122,7 @@ def play(args):
     latents_list = []
     pred_list = []
 
-    for i in range(total_steps):
+    for i in range(total_steps+1):
         actions = policy(obs.detach().to("cpu"))
      
 
@@ -186,7 +188,7 @@ if __name__ == '__main__':
     RECORD_FRAMES = False
     MOVE_CAMERA = False
     PLOT = False
-    GET_LATENT = False
+    GET_LATENT = True
     args = get_args()
     args.rl_device = 'cpu'
     play(args)

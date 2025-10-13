@@ -87,21 +87,19 @@ class Terrain:
                               length=self.width_per_env_pixels,
                               vertical_scale=self.cfg.vertical_scale,
                               horizontal_scale=self.cfg.horizontal_scale)
-            if i == 3:
-                terrain_utils.random_uniform_terrain(terrain, min_height=-0.1, max_height=0.18, step=0.005, downsampled_scale=0.2)
             if i == 0:
-                terrain_utils.pyramid_stairs_terrain(terrain, step_width=0.33, step_height=0.18, platform_size=3.)
-                
-            if i == 2:
-               terrain_utils.discrete_obstacles_terrain(terrain, 0.15, 1, 1.5, 30, platform_size=3.)
-            if i ==1:
-                # terrain_utils.pyramid_sloped_terrain(terrain, slope=0.5, platform_size=3.)
-                terrain_utils.pyramid_stairs_terrain(terrain, step_width=0.35, step_height=0.2, platform_size=3.)
-            if i == 4:
-                terrain_utils.random_uniform_terrain(terrain, min_height=-0.1, max_height=0.15, step=0.005, downsampled_scale=0.2)
-
+                terrain_utils.random_uniform_terrain(terrain, min_height=-0.1, max_height=0.18, step=0.005, downsampled_scale=0.2)
             if i == 5:
-                terrain_utils.random_uniform_terrain(terrain, min_height=-0.1, max_height=0.15, step=0.005, downsampled_scale=0.2)
+                terrain_utils.pyramid_stairs_terrain(terrain, step_width=0.33, step_height=0.15, platform_size=3.)
+                
+            if i == 3:
+               terrain_utils.discrete_obstacles_terrain(terrain, 0.15, 1, 1.5, 30, platform_size=3.)
+            if i ==4:
+                terrain_utils.pyramid_sloped_terrain(terrain, slope=0.5, platform_size=3.)
+                # terrain_utils.pyramid_stairs_terrain(terrain, step_width=0.35, step_height=0.18, platform_size=3.)
+            if i == 1:
+                terrain_utils.pyramid_stairs_terrain(terrain, step_width=0.35, step_height=0.18, platform_size=3.)
+           
             self.add_terrain_to_map_myb(terrain, i, j)
     
     def add_terrain_to_map_myb(self, terrain, row, col):
@@ -114,7 +112,7 @@ class Terrain:
         end_y = self.border + (j + 1) * self.width_per_env_pixels
         self.height_field_raw[start_x: end_x, start_y:end_y] = terrain.height_field_raw
 
-        env_origin_x = 0 - (0.1) * self.env_width
+        env_origin_x = 0 - (-0.05) * self.env_width
         env_origin_y = (0.5) * self.env_width
         x1 = int((self.env_length/2. - 1) / terrain.horizontal_scale)
         x2 = int((self.env_length/2. + 1) / terrain.horizontal_scale)
